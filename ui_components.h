@@ -99,10 +99,6 @@ static void _drawPriceBlock(lv_obj_t *parent,
                              const CryptoData &coin,
                              uint32_t          accent)
 {
-    // "SPOT PRICE" eyebrow
-    lv_obj_t *spot = _mkLabel(parent, "SPOT PRICE", C_TEXT3, &lv_font_montserrat_12);
-    lv_obj_set_pos(spot, 12, 60);
-
     // INR label + value (right-aligned)
     lv_obj_t *inrLbl = _mkLabel(parent, "INR", C_TEXT3, &lv_font_montserrat_12);
     lv_obj_align(inrLbl, LV_ALIGN_TOP_RIGHT, -12, 60);
