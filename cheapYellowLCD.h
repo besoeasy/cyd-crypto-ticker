@@ -129,24 +129,51 @@ public:
 
   void drawWifiManagerMessage(WiFiManager *myWiFiManager) override
   {
+    // ── Apple colour palette ──────────────────────────────────────────────
+    const uint16_t CARD   = 0x2104; // #222222  elevated surface
+    const uint16_t BORDER = 0x39C7; // #3A3A3C  separator
+    const uint16_t GRAY2  = 0x8C72; // #8E8E93  secondary label
+    const uint16_t GRAY3  = 0x630C; // #636366  tertiary label
+    const uint16_t BLUE   = 0x0C3F; // #0A84FF  Apple system blue
+
     tft.fillScreen(TFT_BLACK);
-    tft.setTextColor(TFT_ORANGE, TFT_BLACK);
-    tft.drawCentreString("Crypto Tracker - Config", screenCenterX, 5, 2);
 
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft.drawString("Connect to WiFi AP:", 5, 35, 2);
-    tft.setTextColor(TFT_CYAN, TFT_BLACK);
-    tft.drawString(myWiFiManager->getConfigPortalSSID(), 15, 55, 2);
+    // 3-px blue accent bar
+    tft.fillRect(0, 0, screenWidth, 3, BLUE);
 
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft.drawString("Password:", 5, 80, 2);
-    tft.setTextColor(TFT_CYAN, TFT_BLACK);
-    tft.drawString("crypto123", 15, 100, 2);
+    // Title
+    tft.setTextColor(TFT_WHITE);
+    tft.drawCentreString("WiFi Setup", screenCenterX, 14, 4);
 
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft.drawString("Then open http://192.168.4.1", 5, 130, 2);
-    tft.drawString("to set your coin list", 5, 150, 2);
-    tft.drawString("e.g. bitcoin,ethereum,solana", 5, 170, 1);
+    // ── Network card ──────────────────────────────────────────────────────
+    tft.fillRoundRect(16, 52, 288, 72, 10, CARD);
+    tft.drawRoundRect(16, 52, 288, 72, 10, BORDER);
+
+    tft.setTextColor(GRAY3);
+    tft.drawString("NETWORK", 28, 59, 1);
+    tft.setTextColor(BLUE);
+    tft.drawString(myWiFiManager->getConfigPortalSSID(), 28, 70, 2);
+
+    tft.setTextColor(GRAY3);
+    tft.drawString("PASSWORD", 28, 92, 1);
+    tft.setTextColor(GRAY2);
+    tft.drawString("crypto123", 28, 103, 2);
+
+    // ── Instructions card ─────────────────────────────────────────────────
+    tft.fillRoundRect(16, 136, 288, 68, 10, CARD);
+    tft.drawRoundRect(16, 136, 288, 68, 10, BORDER);
+
+    tft.setTextColor(GRAY3);
+    tft.drawString("CONFIGURE AT", 28, 143, 1);
+    tft.setTextColor(BLUE);
+    tft.drawString("http://192.168.4.1", 28, 154, 2);
+    tft.setTextColor(GRAY3);
+    tft.drawString("Enter your coin list to track", 28, 176, 1);
+    tft.drawString("e.g. bitcoin,ethereum,solana", 28, 187, 1);
+
+    // Footer
+    tft.setTextColor(GRAY3);
+    tft.drawCentreString("Waiting for connection...", screenCenterX, 218, 1);
   }
 
   // Draw a single-coin detail screen and navigation dots
@@ -159,68 +186,99 @@ public:
     }
 
     const CryptoData &coin = coins[index];
-    CoinMeta meta = getCoinMeta(coin.id);
+    CoinMeta meta          = getCoinMeta(coin.id);
+
+    // ── Apple colour palette ──────────────────────────────────────────────
+    const uint16_t CARD   = 0x2104; // #222222  elevated surface
+    const uint16_t BORDER = 0x39C7; // #3A3A3C  separator
+    const uint16_t GRAY2  = 0x8C72; // #8E8E93  secondary label
+    const uint16_t GRAY3  = 0x630C; // #636366  tertiary label
 
     tft.fillScreen(TFT_BLACK);
 
-    // ── Coloured header bar ──
-    tft.fillRect(0, 0, screenWidth, 26, meta.color);
-    tft.setTextColor(TFT_WHITE, meta.color);
-    tft.drawCentreString("CRYPTO TRACKER", screenCenterX, 5, 2);
+    // ── 3-px coin-colour accent bar ───────────────────────────────────────
+    tft.fillRect(0, 0, screenWidth, 3, meta.color);
 
-    // Navigation dots (top-right, inside header)
-    const int DOT_R      = 4;
-    const int DOT_SPACE  = 12;
-    int dotsW  = (count - 1) * DOT_SPACE + DOT_R * 2;
-    int dotX0  = screenWidth - dotsW - 6;
-    for (int i = 0; i < count; i++)
-    {
-      uint16_t dc = (i == index) ? TFT_WHITE : 0x8410;
-      tft.fillCircle(dotX0 + i * DOT_SPACE + DOT_R, 13, DOT_R, dc);
-    }
+    // ── Coin badge circle ─────────────────────────────────────────────────
+    const int CX = screenCenterX;
+    const int CY = 51;
+    const int CR = 41;
+    uint16_t dimColor = ((meta.color >> 1) & 0x7BEF); // 50% darker fill
+    tft.fillCircle(CX, CY, CR, dimColor);
+    tft.drawCircle(CX, CY, CR,     meta.color);        // double ring for weight
+    tft.drawCircle(CX, CY, CR - 1, meta.color);
+    tft.setTextColor(TFT_WHITE);
+    tft.drawCentreString(meta.symbol, CX, CY - 13, 4); // symbol centred inside
 
-    // ── Large logo circle ──
-    const int LOGO_X = screenCenterX;
-    const int LOGO_Y = 88;
-    const int LOGO_R = 50;
-    tft.fillCircle(LOGO_X, LOGO_Y, LOGO_R, meta.color);
-    tft.drawCircle(LOGO_X, LOGO_Y, LOGO_R, TFT_WHITE);
-    // Symbol centred inside (font 4 = ~26 px tall)
-    tft.setTextColor(TFT_WHITE, meta.color);
-    tft.drawCentreString(meta.symbol, LOGO_X, LOGO_Y - 13, 4);
+    // ── Coin name ─────────────────────────────────────────────────────────
+    tft.setTextColor(GRAY2);
+    tft.drawCentreString(meta.name, screenCenterX, 100, 2);
 
-    // ── Coin name ──
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft.drawCentreString(meta.name, screenCenterX, 147, 2);
-
-    // ── Prices ──
+    // ── Prices ────────────────────────────────────────────────────────────
     if (coin.valid)
     {
-      tft.setTextColor(TFT_YELLOW, TFT_BLACK);
-      tft.drawCentreString(formatUSD(coin.usdPrice), screenCenterX, 168, 4);
+      // USD card – coin-coloured border for primary emphasis
+      tft.setTextColor(GRAY3);
+      tft.drawString("USD", 28, 120, 1);
+      tft.fillRoundRect(16, 129, 288, 34, 8, CARD);
+      tft.drawRoundRect(16, 129, 288, 34, 8, meta.color);
+      tft.setTextColor(TFT_WHITE);
+      tft.drawCentreString(formatUSD(coin.usdPrice), screenCenterX, 133, 4);
 
-      tft.setTextColor(TFT_CYAN, TFT_BLACK);
-      tft.drawCentreString(formatINR(coin.inrPrice), screenCenterX, 198, 4);
+      // INR card – neutral border for secondary value
+      tft.setTextColor(GRAY3);
+      tft.drawString("INR", 28, 167, 1);
+      tft.fillRoundRect(16, 176, 288, 26, 8, CARD);
+      tft.drawRoundRect(16, 176, 288, 26, 8, BORDER);
+      tft.setTextColor(GRAY2);
+      tft.drawCentreString(formatINR(coin.inrPrice), screenCenterX, 180, 2);
     }
     else
     {
-      tft.setTextColor(TFT_RED, TFT_BLACK);
-      tft.drawCentreString("Price unavailable", screenCenterX, 183, 2);
+      tft.fillRoundRect(16, 120, 288, 82, 8, CARD);
+      tft.drawRoundRect(16, 120, 288, 82, 8, BORDER);
+      tft.setTextColor(0xF8C5); // soft warm-red
+      tft.drawCentreString("Price unavailable", screenCenterX, 153, 2);
     }
 
-    // ── Bottom touch-hint bar ──
-    tft.drawFastHLine(0, 218, screenWidth, TFT_DARKGREY);
-    tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
-    tft.drawString("< prev", 5, 225, 1);
-    tft.drawCentreString("tap: refresh", screenCenterX, 225, 1);
-    tft.drawRightString("next >", 315, 225, 1);
+    // ── Page dots ─────────────────────────────────────────────────────────
+    const int DOT_R = 3;
+    const int DOT_S = 10;
+    int dotX0 = screenCenterX - ((count - 1) * DOT_S) / 2;
+    for (int i = 0; i < count; i++)
+    {
+      int dx = dotX0 + i * DOT_S;
+      if (i == index)
+      {
+        tft.fillCircle(dx, 214, DOT_R, meta.color);
+      }
+      else
+      {
+        tft.fillCircle(dx, 214, DOT_R, TFT_BLACK);  // clear
+        tft.drawCircle(dx, 214, DOT_R, BORDER);     // outline only
+      }
+    }
+
+    // ── Touch hints ───────────────────────────────────────────────────────
+    tft.setTextColor(GRAY3);
+    tft.drawString("< prev", 8, 228, 1);
+    tft.drawCentreString("refresh", screenCenterX, 228, 1);
+    tft.drawRightString("next >", 312, 228, 1);
   }
 
   void showMessage(const String &msg) override
   {
+    const uint16_t CARD   = 0x2104; // #222222
+    const uint16_t BORDER = 0x39C7; // #3A3A3C
+    const uint16_t GRAY2  = 0x8C72; // #8E8E93
+
     tft.fillScreen(TFT_BLACK);
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft.drawCentreString(msg, screenCenterX, screenHeight / 2 - 8, 2);
+    const int cardH = 44;
+    const int cardY = (screenHeight - cardH) / 2;
+    tft.fillRoundRect(16, cardY, 288, cardH, 12, CARD);
+    tft.drawRoundRect(16, cardY, 288, cardH, 12, BORDER);
+    tft.setTextColor(GRAY2);
+    tft.drawCentreString(msg, screenCenterX, cardY + (cardH - 16) / 2, 2);
   }
 
   // Returns PREV/NEXT/REFRESH based on which screen-third was tapped,
