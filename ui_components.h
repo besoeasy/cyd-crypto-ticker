@@ -99,7 +99,7 @@ static const char *_emptyStateMessage(CoinFeedStatus status)
     return "Price feed unavailable";
 }
 
-// ── Header row: dot + name + symbol pill | page dots + eyebrow ───────────────
+// ── Header row: dot + name | page dots + status ──────────────────────────────
 static void _drawHeader(lv_obj_t *parent,
                         const CryptoData &coin,
                         const CoinTheme &theme,
@@ -127,14 +127,8 @@ static void _drawHeader(lv_obj_t *parent,
     lv_obj_t *eyebrow = _mkLabel(parent, eyebrowText.c_str(), eyebrowColor, &lv_font_montserrat_12);
     lv_obj_set_pos(eyebrow, 28, 36);
 
-    // Symbol pill uses content width and leaves the remaining right side for dots.
-    uint32_t pillBg = _dimBg(accent);
-    int pillW = max(32, (int)strlen(theme.symbol) * 7 + 12);
-    int pillX = 124;
-    _mkPill(parent, pillX, 18, pillW, 18, pillBg, accent, theme.symbol, accent, &lv_font_montserrat_12);
-
     // Page dots
-    _drawPageDots(parent, count, index, pillX + pillW + 12, 308, 23, accent);
+    _drawPageDots(parent, count, index, 220, 308, 23, accent);
 }
 
 // ── Price block ───────────────────────────────────────────────────────────────
