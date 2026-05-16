@@ -6,307 +6,383 @@
 #include <TFT_eSPI.h>
 #include <XPT2046_Touchscreen.h>
 #include <SPI.h>
+#include <lvgl.h>
 
-#define TOUCH_CS_PIN  33
-#define TOUCH_CLK_PIN 25
-#define TOUCH_DIN_PIN 32
-#define TOUCH_DO_PIN  39
+// ── Touch hardware pins ───────────────────────────────────────────────────────
+#define TOUCH_CS_PIN   33
+#define TOUCH_CLK_PIN  25
+#define TOUCH_DIN_PIN  32
+#define TOUCH_DO_PIN   39
 
-// Raw ADC calibration bounds for XPT2046 (adjust if touch zones feel off)
+// Raw ADC calibration for XPT2046
 #define TOUCH_X_MIN  200
 #define TOUCH_X_MAX  3900
 
-TFT_eSPI tft = TFT_eSPI();
-SPIClass touchSPI(VSPI);
+// ── Hardware instances ────────────────────────────────────────────────────────
+TFT_eSPI   tft = TFT_eSPI();
+SPIClass   touchSPI(VSPI);
 XPT2046_Touchscreen ts(TOUCH_CS_PIN);
 
-// ── Coin metadata lookup ──────────────────────────────────────────────────────
-struct CoinMeta
+// ── LVGL draw buffer (320 × 20 lines = 12.5 KB) ──────────────────────────────
+static lv_disp_draw_buf_t _draw_buf;
+static lv_color_t         _lv_buf[320 * 20];
+
+// ── LVGL flush callback ───────────────────────────────────────────────────────
+static void _lv_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_p)
 {
-  const char *symbol;
-  const char *name;
-  uint16_t   color;   // RGB565
+    uint32_t w = area->x2 - area->x1 + 1;
+    uint32_t h = area->y2 - area->y1 + 1;
+    tft.startWrite();
+    tft.setAddrWindow(area->x1, area->y1, w, h);
+    // LV_COLOR_16_SWAP 1 -> bytes already in ILI9341 order; no TFT swap needed
+    tft.pushColors((uint16_t *)color_p, w * h, false);
+    tft.endWrite();
+    lv_disp_flush_ready(drv);
+}
+
+// ── Coin theme ────────────────────────────────────────────────────────────────
+struct CoinTheme
+{
+    uint32_t    hex;
+    const char *symbol;
+    const char *name;
 };
 
-static CoinMeta getCoinMeta(const String &id)
+static CoinTheme _getCoinTheme(const String &id)
 {
-  if (id == "bitcoin")           return {"BTC",  "Bitcoin",  0xFC83}; // #F7931A
-  if (id == "ethereum")          return {"ETH",  "Ethereum", 0x63FD}; // #627EEA
-  if (id == "solana")            return {"SOL",  "Solana",   0x9A3F}; // #9945FF
-  if (id == "the-open-network")  return {"TON",  "Toncoin",  0x04DD}; // #0098EA
-  if (id == "binancecoin")       return {"BNB",  "BNB",      0xF5E0}; // #F3B93A
-  if (id == "ripple")            return {"XRP",  "XRP",      0x34BD}; // #0055AA
-  if (id == "dogecoin")          return {"DOGE", "Dogecoin", 0xC4A0}; // #C2A633
-  if (id == "cardano")           return {"ADA",  "Cardano",  0x0277}; // #0033AD
-  if (id == "polkadot")          return {"DOT",  "Polkadot", 0xE81F}; // #E6007A
-  if (id == "chainlink")         return {"LINK", "Chainlink",0x095F}; // #2A5ADA
-  // fallback: first 4 chars of id, uppercased
-  String sym = id.substring(0, 4);
-  sym.toUpperCase();
-  CoinMeta fallback;
-  fallback.symbol = nullptr; // handled below
-  fallback.name   = nullptr;
-  fallback.color  = 0x7BEF;  // TFT_DARKGREY
-  // We can't return a pointer to a local String, so use a static buffer
-  static char symBuf[8];
-  static char nameBuf[32];
-  sym.toCharArray(symBuf, sizeof(symBuf));
-  id.toCharArray(nameBuf, sizeof(nameBuf));
-  nameBuf[0] = toupper(nameBuf[0]); // capitalise first letter
-  return {symBuf, nameBuf, 0x7BEF};
+    if (id == "bitcoin")           return {0xF7931A, "BTC",  "Bitcoin"};
+    if (id == "ethereum")          return {0x627EEA, "ETH",  "Ethereum"};
+    if (id == "solana")            return {0x9945FF, "SOL",  "Solana"};
+    if (id == "the-open-network")  return {0x0098EA, "TON",  "Toncoin"};
+    if (id == "binancecoin")       return {0xF3B93A, "BNB",  "BNB"};
+    if (id == "ripple")            return {0x346CDB, "XRP",  "XRP"};
+    if (id == "dogecoin")          return {0xC2A633, "DOGE", "Dogecoin"};
+    if (id == "cardano")           return {0x0E4DAA, "ADA",  "Cardano"};
+    if (id == "polkadot")          return {0xE6007A, "DOT",  "Polkadot"};
+    if (id == "chainlink")         return {0x2A5ADA, "LINK", "Chainlink"};
+
+    static char symBuf[8], nameBuf[32];
+    String sym = id.substring(0, 4);
+    sym.toUpperCase();
+    sym.toCharArray(symBuf, sizeof(symBuf));
+    id.toCharArray(nameBuf, sizeof(nameBuf));
+    if (nameBuf[0]) nameBuf[0] = toupper((unsigned char)nameBuf[0]);
+    return {0x6B7DB3, symBuf, nameBuf};
 }
 
 // ── Price formatting ──────────────────────────────────────────────────────────
-static String formatWithCommas(long n)
+static String _fmtCommas(long n)
 {
-  String s = String(n);
-  int len = s.length();
-  String result = "";
-  for (int i = 0; i < len; i++)
-  {
-    if (i > 0 && (len - i) % 3 == 0)
-      result += ",";
-    result += s[i];
-  }
-  return result;
+    String s = String(n), r = "";
+    int len = s.length();
+    for (int i = 0; i < len; i++)
+    {
+        if (i > 0 && (len - i) % 3 == 0) r += ",";
+        r += s[i];
+    }
+    return r;
 }
 
-static String formatUSD(double price)
+static String _fmtUSD(double p)
 {
-  char buf[16];
-  if (price >= 1000000)
-  {
-    dtostrf(price / 1000000.0, 1, 2, buf);
-    return String("$") + buf + "M";
-  }
-  if (price >= 1000)
-    return "$" + formatWithCommas((long)price);
-  if (price >= 1)
-  {
-    dtostrf(price, 1, 2, buf);
-    return String("$") + buf;
-  }
-  dtostrf(price, 1, 6, buf);
-  return String("$") + buf;
+    char buf[16];
+    if (p >= 1e6)   { dtostrf(p / 1e6,  1, 2, buf); return String("$") + buf + "M"; }
+    if (p >= 1000)  return "$" + _fmtCommas((long)p);
+    if (p >= 1)     { dtostrf(p,         1, 2, buf); return String("$") + buf; }
+    dtostrf(p, 1, 6, buf); return String("$") + buf;
 }
 
-static String formatINR(double price)
+static String _fmtINR(double p)
 {
-  char buf[16];
-  if (price >= 10000000) // >= 1 crore
-  {
-    dtostrf(price / 10000000.0, 1, 2, buf);
-    return String("Rs.") + buf + "Cr";
-  }
-  if (price >= 100000) // >= 1 lakh
-  {
-    dtostrf(price / 100000.0, 1, 2, buf);
-    return String("Rs.") + buf + "L";
-  }
-  if (price >= 1000)
-    return "Rs." + formatWithCommas((long)price);
-  dtostrf(price, 1, 2, buf);
-  return String("Rs.") + buf;
+    char buf[16];
+    if (p >= 1e7)  { dtostrf(p / 1e7,    1, 2, buf); return String("Rs.") + buf + "Cr"; }
+    if (p >= 1e5)  { dtostrf(p / 1e5,    1, 2, buf); return String("Rs.") + buf + "L"; }
+    if (p >= 1000) return "Rs." + _fmtCommas((long)p);
+    dtostrf(p, 1, 2, buf); return String("Rs.") + buf;
 }
 
-// ── Display class ─────────────────────────────────────────────────────────────
+// ── Palette ───────────────────────────────────────────────────────────────────
+#define C_BG      0x07071A
+#define C_SURFACE 0x11112B
+#define C_BORDER  0x27274A
+#define C_TEXT1   0xFFFFFF
+#define C_TEXT2   0xA0AAC8
+#define C_TEXT3   0x525A78
+#define C_BLUE    0x0A84FF
+
+// ── UI helpers ────────────────────────────────────────────────────────────────
+static void _styleScreen(lv_obj_t *scr)
+{
+    lv_obj_set_style_bg_color(scr,     lv_color_hex(C_BG), 0);
+    lv_obj_set_style_bg_opa(scr,       LV_OPA_COVER,       0);
+    lv_obj_set_style_pad_all(scr,      0,                  0);
+    lv_obj_set_style_border_width(scr, 0,                  0);
+    lv_obj_clear_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
+}
+
+static lv_obj_t *_mkBar(lv_obj_t *parent, int x, int y, int w, int h, uint32_t color)
+{
+    lv_obj_t *o = lv_obj_create(parent);
+    lv_obj_set_size(o, w, h);
+    lv_obj_set_pos(o, x, y);
+    lv_obj_set_style_radius(o,       0,                   0);
+    lv_obj_set_style_bg_color(o,     lv_color_hex(color), 0);
+    lv_obj_set_style_bg_opa(o,       LV_OPA_COVER,        0);
+    lv_obj_set_style_border_width(o, 0,                   0);
+    lv_obj_set_style_pad_all(o,      0,                   0);
+    lv_obj_clear_flag(o, LV_OBJ_FLAG_SCROLLABLE);
+    return o;
+}
+
+static lv_obj_t *_mkCard(lv_obj_t *parent,
+                          int x, int y, int w, int h,
+                          uint32_t bgTop, uint32_t bgBot,
+                          uint32_t border, int radius = 10)
+{
+    lv_obj_t *o = lv_obj_create(parent);
+    lv_obj_set_size(o, w, h);
+    lv_obj_set_pos(o, x, y);
+    lv_obj_set_style_radius(o,         radius,               0);
+    lv_obj_set_style_bg_color(o,       lv_color_hex(bgTop),  0);
+    lv_obj_set_style_bg_grad_color(o,  lv_color_hex(bgBot),  0);
+    lv_obj_set_style_bg_grad_dir(o,    LV_GRAD_DIR_VER,      0);
+    lv_obj_set_style_bg_opa(o,         LV_OPA_COVER,         0);
+    lv_obj_set_style_border_color(o,   lv_color_hex(border), 0);
+    lv_obj_set_style_border_width(o,   1,                    0);
+    lv_obj_set_style_pad_all(o,        0,                    0);
+    lv_obj_clear_flag(o, LV_OBJ_FLAG_SCROLLABLE);
+    return o;
+}
+
+static lv_obj_t *_mkLabel(lv_obj_t *parent,
+                           const char      *text,
+                           uint32_t         color,
+                           const lv_font_t *font)
+{
+    lv_obj_t *l = lv_label_create(parent);
+    lv_label_set_text(l, text);
+    lv_obj_set_style_text_color(l, lv_color_hex(color), 0);
+    lv_obj_set_style_text_font(l,  font,                 0);
+    lv_obj_set_style_bg_opa(l,     LV_OPA_TRANSP,        0);
+    return l;
+}
+
+static void _lvFlush()
+{
+    lv_obj_invalidate(lv_scr_act());
+    for (int i = 0; i < 16; i++) lv_timer_handler();
+}
+
+// ── Main display class ────────────────────────────────────────────────────────
 class CheapYellowDisplay : public ProjectDisplay
 {
 public:
-  void displaySetup() override
-  {
-    setWidth(320);
-    setHeight(240);
-
-    tft.init();
-    tft.setRotation(1);
-    tft.fillScreen(TFT_BLACK);
-
-    touchSPI.begin(TOUCH_CLK_PIN, TOUCH_DO_PIN, TOUCH_DIN_PIN, TOUCH_CS_PIN);
-    ts.begin(touchSPI);
-    ts.setRotation(1);
-  }
-
-  void drawWifiManagerMessage(WiFiManager *myWiFiManager) override
-  {
-    // ── Apple colour palette ──────────────────────────────────────────────
-    const uint16_t CARD   = 0x2104; // #222222  elevated surface
-    const uint16_t BORDER = 0x39C7; // #3A3A3C  separator
-    const uint16_t GRAY2  = 0x8C72; // #8E8E93  secondary label
-    const uint16_t GRAY3  = 0x630C; // #636366  tertiary label
-    const uint16_t BLUE   = 0x0C3F; // #0A84FF  Apple system blue
-
-    tft.fillScreen(TFT_BLACK);
-
-    // 3-px blue accent bar
-    tft.fillRect(0, 0, screenWidth, 3, BLUE);
-
-    // Title
-    tft.setTextColor(TFT_WHITE);
-    tft.drawCentreString("WiFi Setup", screenCenterX, 14, 4);
-
-    // ── Network card ──────────────────────────────────────────────────────
-    tft.fillRoundRect(16, 52, 288, 72, 10, CARD);
-    tft.drawRoundRect(16, 52, 288, 72, 10, BORDER);
-
-    tft.setTextColor(GRAY3);
-    tft.drawString("NETWORK", 28, 59, 1);
-    tft.setTextColor(BLUE);
-    tft.drawString(myWiFiManager->getConfigPortalSSID(), 28, 70, 2);
-
-    tft.setTextColor(GRAY3);
-    tft.drawString("PASSWORD", 28, 92, 1);
-    tft.setTextColor(GRAY2);
-    tft.drawString("crypto123", 28, 103, 2);
-
-    // ── Instructions card ─────────────────────────────────────────────────
-    tft.fillRoundRect(16, 136, 288, 68, 10, CARD);
-    tft.drawRoundRect(16, 136, 288, 68, 10, BORDER);
-
-    tft.setTextColor(GRAY3);
-    tft.drawString("CONFIGURE AT", 28, 143, 1);
-    tft.setTextColor(BLUE);
-    tft.drawString("http://192.168.4.1", 28, 154, 2);
-    tft.setTextColor(GRAY3);
-    tft.drawString("Enter your coin list to track", 28, 176, 1);
-    tft.drawString("e.g. bitcoin,ethereum,solana", 28, 187, 1);
-
-    // Footer
-    tft.setTextColor(GRAY3);
-    tft.drawCentreString("Waiting for connection...", screenCenterX, 218, 1);
-  }
-
-  // Draw a single-coin detail screen and navigation dots
-  void drawCoinScreen(const CryptoData *coins, int count, int index) override
-  {
-    if (count == 0)
+    void displaySetup() override
     {
-      showMessage("No coins configured");
-      return;
+        setWidth(320);
+        setHeight(240);
+
+        tft.init();
+        tft.setRotation(1);
+        tft.fillScreen(TFT_BLACK);
+
+        touchSPI.begin(TOUCH_CLK_PIN, TOUCH_DO_PIN, TOUCH_DIN_PIN, TOUCH_CS_PIN);
+        ts.begin(touchSPI);
+        ts.setRotation(1);
+
+        lv_init();
+        lv_disp_draw_buf_init(&_draw_buf, _lv_buf, NULL, 320 * 20);
+
+        static lv_disp_drv_t disp_drv;
+        lv_disp_drv_init(&disp_drv);
+        disp_drv.hor_res  = 320;
+        disp_drv.ver_res  = 240;
+        disp_drv.flush_cb = _lv_flush_cb;
+        disp_drv.draw_buf = &_draw_buf;
+        lv_disp_drv_register(&disp_drv);
     }
 
-    const CryptoData &coin = coins[index];
-    CoinMeta meta          = getCoinMeta(coin.id);
-
-    // ── Apple colour palette ──────────────────────────────────────────────
-    const uint16_t CARD   = 0x2104; // #222222  elevated surface
-    const uint16_t BORDER = 0x39C7; // #3A3A3C  separator
-    const uint16_t GRAY2  = 0x8C72; // #8E8E93  secondary label
-    const uint16_t GRAY3  = 0x630C; // #636366  tertiary label
-
-    tft.fillScreen(TFT_BLACK);
-
-    // ── 3-px coin-colour accent bar ───────────────────────────────────────
-    tft.fillRect(0, 0, screenWidth, 3, meta.color);
-
-    // ── Coin badge circle ─────────────────────────────────────────────────
-    const int CX = screenCenterX;
-    const int CY = 51;
-    const int CR = 41;
-    uint16_t dimColor = ((meta.color >> 1) & 0x7BEF); // 50% darker fill
-    tft.fillCircle(CX, CY, CR, dimColor);
-    tft.drawCircle(CX, CY, CR,     meta.color);        // double ring for weight
-    tft.drawCircle(CX, CY, CR - 1, meta.color);
-    tft.setTextColor(TFT_WHITE);
-    tft.drawCentreString(meta.symbol, CX, CY - 13, 4); // symbol centred inside
-
-    // ── Coin name ─────────────────────────────────────────────────────────
-    tft.setTextColor(GRAY2);
-    tft.drawCentreString(meta.name, screenCenterX, 100, 2);
-
-    // ── Prices ────────────────────────────────────────────────────────────
-    if (coin.valid)
+    void drawWifiManagerMessage(WiFiManager *wm) override
     {
-      // USD card – coin-coloured border for primary emphasis
-      tft.setTextColor(GRAY3);
-      tft.drawString("USD", 28, 120, 1);
-      tft.fillRoundRect(16, 129, 288, 34, 8, CARD);
-      tft.drawRoundRect(16, 129, 288, 34, 8, meta.color);
-      tft.setTextColor(TFT_WHITE);
-      tft.drawCentreString(formatUSD(coin.usdPrice), screenCenterX, 133, 4);
+        lv_obj_t *scr = lv_scr_act();
+        lv_obj_clean(scr);
+        _styleScreen(scr);
 
-      // INR card – neutral border for secondary value
-      tft.setTextColor(GRAY3);
-      tft.drawString("INR", 28, 167, 1);
-      tft.fillRoundRect(16, 176, 288, 26, 8, CARD);
-      tft.drawRoundRect(16, 176, 288, 26, 8, BORDER);
-      tft.setTextColor(GRAY2);
-      tft.drawCentreString(formatINR(coin.inrPrice), screenCenterX, 180, 2);
-    }
-    else
-    {
-      tft.fillRoundRect(16, 120, 288, 82, 8, CARD);
-      tft.drawRoundRect(16, 120, 288, 82, 8, BORDER);
-      tft.setTextColor(0xF8C5); // soft warm-red
-      tft.drawCentreString("Price unavailable", screenCenterX, 153, 2);
+        _mkBar(scr, 0, 0, 320, 4, C_BLUE);
+
+        lv_obj_t *title = _mkLabel(scr, "WiFi Setup", C_TEXT1, &lv_font_montserrat_16);
+        lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
+
+        // Network card
+        lv_obj_t *nc = _mkCard(scr, 7, 40, 306, 68, 0x14143A, C_BG, C_BORDER);
+        lv_obj_t *nHead = _mkLabel(nc, "NETWORK", C_TEXT3, &lv_font_montserrat_12);
+        lv_obj_set_pos(nHead, 12, 8);
+
+        String ssidStr = wm->getConfigPortalSSID();
+        lv_obj_t *ssidL = _mkLabel(nc, ssidStr.c_str(), C_BLUE, &lv_font_montserrat_16);
+        lv_obj_set_pos(ssidL, 12, 22);
+
+        lv_obj_t *pHead = _mkLabel(nc, "PASSWORD", C_TEXT3, &lv_font_montserrat_12);
+        lv_obj_set_pos(pHead, 12, 42);
+        lv_obj_t *pwL = _mkLabel(nc, "crypto123", C_TEXT2, &lv_font_montserrat_12);
+        lv_obj_set_pos(pwL, 12, 54);
+
+        // Configure card
+        lv_obj_t *cc = _mkCard(scr, 7, 116, 306, 68, 0x14143A, C_BG, C_BORDER);
+        lv_obj_t *cHead = _mkLabel(cc, "CONFIGURE AT", C_TEXT3, &lv_font_montserrat_12);
+        lv_obj_set_pos(cHead, 12, 8);
+        lv_obj_t *ipL = _mkLabel(cc, "http://192.168.4.1", C_BLUE, &lv_font_montserrat_12);
+        lv_obj_set_pos(ipL, 12, 22);
+        lv_obj_t *hint = _mkLabel(cc, "Enter coin IDs: bitcoin,ethereum,solana", C_TEXT3, &lv_font_montserrat_12);
+        lv_obj_set_pos(hint, 12, 44);
+
+        lv_obj_t *ft = _mkLabel(scr, "Waiting for connection...", C_TEXT3, &lv_font_montserrat_12);
+        lv_obj_align(ft, LV_ALIGN_BOTTOM_MID, 0, -6);
+
+        _lvFlush();
     }
 
-    // ── Page dots ─────────────────────────────────────────────────────────
-    const int DOT_R = 3;
-    const int DOT_S = 10;
-    int dotX0 = screenCenterX - ((count - 1) * DOT_S) / 2;
-    for (int i = 0; i < count; i++)
+    void drawCoinScreen(const CryptoData *coins, int count, int index) override
     {
-      int dx = dotX0 + i * DOT_S;
-      if (i == index)
-      {
-        tft.fillCircle(dx, 214, DOT_R, meta.color);
-      }
-      else
-      {
-        tft.fillCircle(dx, 214, DOT_R, TFT_BLACK);  // clear
-        tft.drawCircle(dx, 214, DOT_R, BORDER);     // outline only
-      }
+        if (count == 0) { showMessage("No coins configured"); return; }
+
+        const CryptoData &coin = coins[index];
+        CoinTheme th = _getCoinTheme(coin.id);
+        uint32_t  C  = th.hex;
+        uint32_t  Cd = _dim(C);
+
+        lv_obj_t *scr = lv_scr_act();
+        lv_obj_clean(scr);
+        _styleScreen(scr);
+
+        // Accent bar
+        _mkBar(scr, 0, 0, 320, 4, C);
+
+        // Header card
+        lv_obj_t *hdr = _mkCard(scr, 7, 6, 306, 46, 0x13132E, C_BG, C_BORDER);
+
+        // Badge circle
+        lv_obj_t *badge = lv_obj_create(hdr);
+        lv_obj_set_size(badge, 36, 36);
+        lv_obj_set_pos(badge, 5, 5);
+        lv_obj_set_style_radius(badge,       LV_RADIUS_CIRCLE,  0);
+        lv_obj_set_style_bg_color(badge,     lv_color_hex(Cd),  0);
+        lv_obj_set_style_bg_opa(badge,       LV_OPA_COVER,      0);
+        lv_obj_set_style_border_color(badge, lv_color_hex(C),   0);
+        lv_obj_set_style_border_width(badge, 2,                 0);
+        lv_obj_set_style_pad_all(badge,      0,                 0);
+        lv_obj_clear_flag(badge, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t *symL = _mkLabel(badge, th.symbol, C, &lv_font_montserrat_12);
+        lv_obj_align(symL, LV_ALIGN_CENTER, 0, 0);
+
+        lv_obj_t *nameL = _mkLabel(hdr, th.name,   C_TEXT1, &lv_font_montserrat_16);
+        lv_obj_set_pos(nameL, 48, 6);
+        lv_obj_t *tickL = _mkLabel(hdr, th.symbol, C,       &lv_font_montserrat_12);
+        lv_obj_set_pos(tickL, 48, 26);
+
+        // Page dots
+        int dotW  = count * 10 - 4;
+        int dotX0 = 306 - 10 - dotW;
+        int dotY  = (46 - 6) / 2;
+        for (int i = 0; i < count; i++)
+        {
+            lv_obj_t *dot = lv_obj_create(hdr);
+            lv_obj_set_size(dot, 6, 6);
+            lv_obj_set_pos(dot, dotX0 + i * 10, dotY);
+            lv_obj_set_style_radius(dot,       LV_RADIUS_CIRCLE, 0);
+            lv_obj_set_style_border_width(dot, 0,                0);
+            lv_obj_set_style_pad_all(dot,      0,                0);
+            lv_obj_clear_flag(dot, LV_OBJ_FLAG_SCROLLABLE);
+            uint32_t dc = (i == index) ? C : C_BORDER;
+            lv_obj_set_style_bg_color(dot, lv_color_hex(dc), 0);
+            lv_obj_set_style_bg_opa(dot,   LV_OPA_COVER,     0);
+        }
+
+        if (coin.valid)
+        {
+            // USD card — coin-coloured border, gradient fill
+            lv_obj_t *uCard = _mkCard(scr, 7, 58, 306, 78, 0x16163A, C_BG, C);
+            lv_obj_t *uTag  = _mkLabel(uCard, "USD", C_TEXT3, &lv_font_montserrat_12);
+            lv_obj_set_pos(uTag, 14, 8);
+            String uVal = _fmtUSD(coin.usdPrice);
+            lv_obj_t *uPri = _mkLabel(uCard, uVal.c_str(), C_TEXT1, &lv_font_montserrat_32);
+            lv_obj_align(uPri, LV_ALIGN_CENTER, 0, 8);
+
+            // INR card — neutral border
+            lv_obj_t *iCard = _mkCard(scr, 7, 144, 306, 52, 0x12122E, C_BG, C_BORDER);
+            lv_obj_t *iTag  = _mkLabel(iCard, "INR", C_TEXT3, &lv_font_montserrat_12);
+            lv_obj_set_pos(iTag, 14, 6);
+            String iVal = _fmtINR(coin.inrPrice);
+            lv_obj_t *iPri = _mkLabel(iCard, iVal.c_str(), C_TEXT2, &lv_font_montserrat_24);
+            lv_obj_align(iPri, LV_ALIGN_CENTER, 0, 6);
+        }
+        else
+        {
+            lv_obj_t *eCard = _mkCard(scr, 7, 58, 306, 138, 0x200A0A, C_BG, 0x5A1818);
+            lv_obj_t *eMsg  = _mkLabel(eCard, "Price unavailable", 0xF07070, &lv_font_montserrat_16);
+            lv_obj_align(eMsg, LV_ALIGN_CENTER, 0, 0);
+        }
+
+        // Nav icons
+        lv_obj_t *navL = _mkLabel(scr, LV_SYMBOL_LEFT,    C_TEXT3, &lv_font_montserrat_12);
+        lv_obj_set_pos(navL, 12, 206);
+        lv_obj_t *navC = _mkLabel(scr, LV_SYMBOL_REFRESH, C_TEXT3, &lv_font_montserrat_12);
+        lv_obj_align(navC, LV_ALIGN_BOTTOM_MID, 0, -10);
+        lv_obj_t *navR = _mkLabel(scr, LV_SYMBOL_RIGHT,   C_TEXT3, &lv_font_montserrat_12);
+        lv_obj_align(navR, LV_ALIGN_BOTTOM_RIGHT, -12, -10);
+
+        _lvFlush();
     }
 
-    // ── Touch hints ───────────────────────────────────────────────────────
-    tft.setTextColor(GRAY3);
-    tft.drawString("< prev", 8, 228, 1);
-    tft.drawCentreString("refresh", screenCenterX, 228, 1);
-    tft.drawRightString("next >", 312, 228, 1);
-  }
-
-  void showMessage(const String &msg) override
-  {
-    const uint16_t CARD   = 0x2104; // #222222
-    const uint16_t BORDER = 0x39C7; // #3A3A3C
-    const uint16_t GRAY2  = 0x8C72; // #8E8E93
-
-    tft.fillScreen(TFT_BLACK);
-    const int cardH = 44;
-    const int cardY = (screenHeight - cardH) / 2;
-    tft.fillRoundRect(16, cardY, 288, cardH, 12, CARD);
-    tft.drawRoundRect(16, cardY, 288, cardH, 12, BORDER);
-    tft.setTextColor(GRAY2);
-    tft.drawCentreString(msg, screenCenterX, cardY + (cardH - 16) / 2, 2);
-  }
-
-  // Returns PREV/NEXT/REFRESH based on which screen-third was tapped,
-  // debounced so each press fires only once.
-  TouchAction getTouchAction() override
-  {
-    bool nowTouched = ts.touched();
-    if (!nowTouched)
+    void showMessage(const String &msg) override
     {
-      _wasTouched = false;
-      return TOUCH_NONE;
-    }
-    if (_wasTouched)
-      return TOUCH_NONE; // already consumed this press
+        lv_obj_t *scr = lv_scr_act();
+        lv_obj_clean(scr);
+        _styleScreen(scr);
 
-    _wasTouched = true;
-    TS_Point p = ts.getPoint();
-    // Map raw x (TOUCH_X_MIN..TOUCH_X_MAX) → screen x (0..screenWidth)
-    int sx = map(p.x, TOUCH_X_MIN, TOUCH_X_MAX, 0, screenWidth);
-    if (sx < screenWidth / 3)
-      return TOUCH_PREV;
-    if (sx > (screenWidth * 2 / 3))
-      return TOUCH_NEXT;
-    return TOUCH_REFRESH;
-  }
+        lv_obj_t *spin = lv_spinner_create(scr, 1200, 80);
+        lv_obj_set_size(spin, 52, 52);
+        lv_obj_align(spin, LV_ALIGN_CENTER, 0, -24);
+        lv_obj_set_style_arc_color(spin, lv_color_hex(C_BLUE),   LV_PART_INDICATOR);
+        lv_obj_set_style_arc_width(spin, 4,                       LV_PART_INDICATOR);
+        lv_obj_set_style_arc_color(spin, lv_color_hex(C_BORDER),  LV_PART_MAIN);
+        lv_obj_set_style_arc_width(spin, 4,                       LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(spin,    LV_OPA_TRANSP,           LV_PART_MAIN);
+
+        lv_obj_t *lbl = _mkLabel(scr, msg.c_str(), C_TEXT2, &lv_font_montserrat_12);
+        lv_obj_align(lbl, LV_ALIGN_CENTER, 0, 24);
+
+        _lvFlush();
+    }
+
+    TouchAction getTouchAction() override
+    {
+        lv_timer_handler();
+
+        bool nowTouched = ts.touched();
+        if (!nowTouched) { _wasTouched = false; return TOUCH_NONE; }
+        if (_wasTouched)  return TOUCH_NONE;
+
+        _wasTouched = true;
+        TS_Point p  = ts.getPoint();
+        int sx      = map(p.x, TOUCH_X_MIN, TOUCH_X_MAX, 0, screenWidth);
+
+        if (sx < screenWidth / 3)        return TOUCH_PREV;
+        if (sx > (screenWidth * 2) / 3)  return TOUCH_NEXT;
+        return TOUCH_REFRESH;
+    }
 
 private:
-  bool _wasTouched = false;
+    bool _wasTouched = false;
+
+    static uint32_t _dim(uint32_t hex)
+    {
+        uint8_t r = ((hex >> 16) & 0xFF) * 30 / 100;
+        uint8_t g = ((hex >>  8) & 0xFF) * 30 / 100;
+        uint8_t b = ((hex      ) & 0xFF) * 30 / 100;
+        return ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
+    }
 };
 
-#endif
+#endif // CHEAPYELLOWLCD_H
