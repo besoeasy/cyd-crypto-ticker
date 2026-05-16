@@ -6,6 +6,7 @@
 #define CONFIG_CRYPTO_IDS "cryptoIds"
 #define DEFAULT_CORE_CRYPTO_IDS "bitcoin,ethereum,solana"
 #define DEFAULT_CRYPTO_IDS DEFAULT_CORE_CRYPTO_IDS
+#define LEGACY_DEFAULT_CRYPTO_IDS "bitcoin,ethereum,solana,the-open-network"
 
 class ProjectConfig
 {
@@ -16,7 +17,8 @@ public:
   {
     String configured = cryptoIds;
     configured.trim();
-    return configured == String(DEFAULT_CRYPTO_IDS);
+    return configured == String(DEFAULT_CRYPTO_IDS)
+        || configured == String(LEGACY_DEFAULT_CRYPTO_IDS);
   }
 
   bool fetchConfigFile()
