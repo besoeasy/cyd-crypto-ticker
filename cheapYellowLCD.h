@@ -101,6 +101,26 @@ static String _fmtINR(double p)
     dtostrf(p, 1, 2, buf); return String("Rs.") + buf;
 }
 
+static String _fmtSignedUSD(double value)
+{
+    String amount = _fmtUSD(fabs(value));
+    if (value > 0.000001) return "+" + amount;
+    if (value < -0.000001) return "-" + amount;
+    return amount;
+}
+
+static String _fmtSignedPercent(double value)
+{
+    char buf[16];
+    dtostrf(fabs(value), 1, 2, buf);
+
+    String text = buf;
+    text.trim();
+    if (value > 0.000001) return "+" + text + "%";
+    if (value < -0.000001) return "-" + text + "%";
+    return text + "%";
+}
+
 // ── Palette ───────────────────────────────────────────────────────────────────
 #define C_BG      0x07071A
 #define C_SURFACE 0x11112B
@@ -171,6 +191,35 @@ static void _lvFlush()
 {
     lv_obj_invalidate(lv_scr_act());
     for (int i = 0; i < 16; i++) lv_timer_handler();
+}
+
+static uint32_t _changeColor(const PriceChangeData &change)
+{
+    if (!change.available) return C_TEXT3;
+    return change.percent < 0 ? 0xF07070 : 0x35C46A;
+}
+
+static void _drawChangeCard(lv_obj_t *parent,
+                            int x,
+                            int y,
+                            int w,
+                            int h,
+                            const char *label,
+                            const PriceChangeData &change)
+{
+    uint32_t color = _changeColor(change);
+    lv_obj_t *card = _mkCard(parent, x, y, w, h, 0x11112B, C_BG, C_BORDER, 8);
+
+    lv_obj_t *title = _mkLabel(card, label, C_TEXT3, &lv_font_montserrat_12);
+    lv_obj_set_pos(title, 8, 6);
+
+    String percent = change.available ? _fmtSignedPercent(change.percent) : "--";
+    lv_obj_t *percentLabel = _mkLabel(card, percent.c_str(), color, &lv_font_montserrat_16);
+    lv_obj_align(percentLabel, LV_ALIGN_CENTER, 0, -6);
+
+    String amount = change.available ? _fmtSignedUSD(change.usdAmount) : "N/A";
+    lv_obj_t *amountLabel = _mkLabel(card, amount.c_str(), C_TEXT2, &lv_font_montserrat_12);
+    lv_obj_align(amountLabel, LV_ALIGN_BOTTOM_MID, 0, -6);
 }
 
 // ── Main display class ────────────────────────────────────────────────────────
@@ -301,25 +350,26 @@ public:
 
         if (coin.valid)
         {
-            // USD card — coin-coloured border, gradient fill
-            lv_obj_t *uCard = _mkCard(scr, 7, 58, 306, 78, 0x16163A, C_BG, C);
+            lv_obj_t *uCard = _mkCard(scr, 7, 58, 306, 62, 0x16163A, C_BG, C);
             lv_obj_t *uTag  = _mkLabel(uCard, "USD", C_TEXT3, &lv_font_montserrat_12);
             lv_obj_set_pos(uTag, 14, 8);
             String uVal = _fmtUSD(coin.usdPrice);
-            lv_obj_t *uPri = _mkLabel(uCard, uVal.c_str(), C_TEXT1, &lv_font_montserrat_32);
-            lv_obj_align(uPri, LV_ALIGN_CENTER, 0, 8);
+            lv_obj_t *uPri = _mkLabel(uCard, uVal.c_str(), C_TEXT1, &lv_font_montserrat_24);
+            lv_obj_set_pos(uPri, 14, 24);
 
-            // INR card — neutral border
-            lv_obj_t *iCard = _mkCard(scr, 7, 144, 306, 52, 0x12122E, C_BG, C_BORDER);
-            lv_obj_t *iTag  = _mkLabel(iCard, "INR", C_TEXT3, &lv_font_montserrat_12);
-            lv_obj_set_pos(iTag, 14, 6);
-            String iVal = _fmtINR(coin.inrPrice);
-            lv_obj_t *iPri = _mkLabel(iCard, iVal.c_str(), C_TEXT2, &lv_font_montserrat_24);
-            lv_obj_align(iPri, LV_ALIGN_CENTER, 0, 6);
+            lv_obj_t *iTag  = _mkLabel(uCard, "INR", C_TEXT3, &lv_font_montserrat_12);
+            lv_obj_set_pos(iTag, 208, 8);
+            String iVal = coin.hasInr ? _fmtINR(coin.inrPrice) : String("N/A");
+            lv_obj_t *iPri = _mkLabel(uCard, iVal.c_str(), C_TEXT2, &lv_font_montserrat_16);
+            lv_obj_set_pos(iPri, 168, 26);
+
+            _drawChangeCard(scr, 7,   128, 96, 64, "24H", coin.change24h);
+            _drawChangeCard(scr, 112, 128, 96, 64, "7D",  coin.change7d);
+            _drawChangeCard(scr, 217, 128, 96, 64, "1M",  coin.change30d);
         }
         else
         {
-            lv_obj_t *eCard = _mkCard(scr, 7, 58, 306, 138, 0x200A0A, C_BG, 0x5A1818);
+            lv_obj_t *eCard = _mkCard(scr, 7, 58, 306, 134, 0x200A0A, C_BG, 0x5A1818);
             lv_obj_t *eMsg  = _mkLabel(eCard, "Price unavailable", 0xF07070, &lv_font_montserrat_16);
             lv_obj_align(eMsg, LV_ALIGN_CENTER, 0, 0);
         }

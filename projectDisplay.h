@@ -3,11 +3,22 @@
 
 #include <Arduino.h>
 
+struct PriceChangeData
+{
+  double percent = 0;
+  double usdAmount = 0;
+  bool available = false;
+};
+
 struct CryptoData
 {
   String id;
   double usdPrice = 0;
   double inrPrice = 0;
+  bool hasInr = false;
+  PriceChangeData change24h;
+  PriceChangeData change7d;
+  PriceChangeData change30d;
   bool valid = false;
 };
 
