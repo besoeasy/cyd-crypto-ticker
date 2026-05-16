@@ -145,18 +145,18 @@ public:
         lv_obj_set_style_pad_all(cont,      0,             0);
         lv_obj_clear_flag(cont, LV_OBJ_FLAG_SCROLLABLE);
 
-        _drawHeader(cont, th, count, index, C);
+        _drawHeader(cont, coin, th, count, index, C);
         _divider(cont, 54);
 
         if (coin.valid)
         {
             _drawPriceBlock(cont, coin, C);
-            _divider(cont, 132);
+            _divider(cont, 150);
             _drawMetrics(cont, coin);
         }
         else
         {
-            _drawEmptyState(cont, "Price unavailable");
+            _drawEmptyState(cont, coin);
         }
 
         // Slide in from the correct side (or plain flush on first render)

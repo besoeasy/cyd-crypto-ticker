@@ -10,6 +10,16 @@ struct PriceChangeData
   bool available = false;
 };
 
+enum CoinFeedStatus
+{
+  COIN_FEED_OK,
+  COIN_FEED_NETWORK,
+  COIN_FEED_RATE_LIMITED,
+  COIN_FEED_INVALID_ID,
+  COIN_FEED_PARSE_ERROR,
+  COIN_FEED_NO_DATA
+};
+
 struct CryptoData
 {
   String id;
@@ -20,6 +30,8 @@ struct CryptoData
   PriceChangeData change7d;
   PriceChangeData change30d;
   bool valid = false;
+  unsigned long lastUpdatedMs = 0;
+  CoinFeedStatus feedStatus = COIN_FEED_NO_DATA;
 };
 
 enum TouchAction

@@ -42,6 +42,29 @@ static void resetCoinMarketData(CryptoData &coin)
     coin.change7d  = PriceChangeData();
     coin.change30d = PriceChangeData();
     coin.valid     = false;
+    coin.lastUpdatedMs = 0;
+    coin.feedStatus = COIN_FEED_NO_DATA;
+}
+
+static CoinFeedStatus httpCodeToFeedStatus(int httpCode)
+{
+    if (httpCode == 429) return COIN_FEED_RATE_LIMITED;
+    return COIN_FEED_NETWORK;
+}
+
+static void markCoinValid(CryptoData &coin, unsigned long updatedAt)
+{
+    coin.valid = true;
+    coin.feedStatus = COIN_FEED_OK;
+    coin.lastUpdatedMs = updatedAt;
+}
+
+static void setInvalidCoinStatuses(CoinFeedStatus status)
+{
+    for (int i = 0; i < coinCount; i++)
+    {
+        if (!coins[i].valid) coins[i].feedStatus = status;
+    }
 }
 
 static bool readOptionalDouble(JsonVariantConst value, double &result)
@@ -329,6 +352,9 @@ void fetchPrices(bool allowDefaultFallback = true)
     if (coinCount == 0) return;
 
     CryptoData previousCoins[MAX_COINS];
+    bool marketMatched[MAX_COINS] = {false};
+    bool simpleMatched[MAX_COINS] = {false};
+    unsigned long fetchedAt = millis();
     for (int i = 0; i < coinCount; i++)
         previousCoins[i] = coins[i];
 
@@ -367,10 +393,14 @@ void fetchPrices(bool allowDefaultFallback = true)
                 for (int i = 0; i < coinCount; i++)
                 {
                     if (coins[i].id != entryId) continue;
+                    marketMatched[i] = true;
 
                     CryptoData &coin = coins[i];
-                    coin.usdPrice = entry["current_price"] | 0.0;
-                    coin.valid = !entry["current_price"].isNull();
+                    if (!entry["current_price"].isNull())
+                    {
+                        coin.usdPrice = entry["current_price"].as<double>();
+                        markCoinValid(coin, fetchedAt);
+                    }
 
                     double percent = 0;
                     if (readPercentWithFallback(entry, "price_change_percentage_24h_in_currency", "price_change_percentage_24h", percent))
@@ -397,12 +427,14 @@ void fetchPrices(bool allowDefaultFallback = true)
             Serial.println(error.c_str());
             Serial.print("Market payload bytes: ");
             Serial.println(payload.length());
+            setInvalidCoinStatuses(COIN_FEED_PARSE_ERROR);
         }
     }
     else
     {
         Serial.print("Market fetch failed, HTTP: ");
         Serial.println(httpCode);
+        setInvalidCoinStatuses(httpCodeToFeedStatus(httpCode));
     }
     http.end();
 
@@ -426,12 +458,13 @@ void fetchPrices(bool allowDefaultFallback = true)
             {
                 const char *id = coins[i].id.c_str();
                 if (!simpleJson.containsKey(id)) continue;
+                simpleMatched[i] = true;
 
                 JsonObjectConst entry = simpleJson[id];
                 if (!entry["usd"].isNull())
                 {
                     coins[i].usdPrice = entry["usd"].as<double>();
-                    coins[i].valid = true;
+                    markCoinValid(coins[i], fetchedAt);
                 }
 
                 if (!entry["inr"].isNull())
@@ -447,14 +480,24 @@ void fetchPrices(bool allowDefaultFallback = true)
             Serial.println(simpleError.c_str());
             Serial.print("Simple payload bytes: ");
             Serial.println(payload.length());
+            setInvalidCoinStatuses(COIN_FEED_PARSE_ERROR);
         }
     }
     else
     {
         Serial.print("Simple price fetch failed, HTTP: ");
         Serial.println(simpleCode);
+        setInvalidCoinStatuses(httpCodeToFeedStatus(simpleCode));
     }
     simpleHttp.end();
+
+    for (int i = 0; i < coinCount; i++)
+    {
+        if (coins[i].valid || coins[i].feedStatus != COIN_FEED_NO_DATA) continue;
+        coins[i].feedStatus = (!marketMatched[i] && !simpleMatched[i])
+            ? COIN_FEED_INVALID_ID
+            : COIN_FEED_NO_DATA;
+    }
 
     if (!hasAnyValidCoin(coins, coinCount))
     {
