@@ -41,8 +41,13 @@ pio run -e cyd2usb --target upload
 ## Default Coins
 
 ```
-bitcoin, ethereum, solana, the-open-network
+bitcoin, ethereum, solana
 ```
+
+If you keep the default coin IDs unchanged, startup adds:
+
+- 1 random trending coin
+- 2 random coins picked from CoinGecko's top 100 by trading volume
 
 Up to **8 coins** are supported. Prices refresh every 60 seconds and rotate every 8 seconds.
 

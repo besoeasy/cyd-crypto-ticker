@@ -8,6 +8,7 @@
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
 #include <math.h>
+#include <esp_system.h>
 
 #include "projectConfig.h"
 #include "projectDisplay.h"
@@ -70,6 +71,188 @@ static bool readPercentWithFallback(JsonObjectConst entry, const char *primaryKe
 {
     return readOptionalDouble(entry[primaryKey], percent)
         || readOptionalDouble(entry[fallbackKey], percent);
+}
+
+static bool containsCoinId(const String *ids, int count, const String &id)
+{
+    for (int i = 0; i < count; i++)
+    {
+        if (ids[i] == id) return true;
+    }
+    return false;
+}
+
+static void appendUniqueCoinId(String *ids, int &count, int maxCount, const String &id)
+{
+    if (id.length() == 0 || count >= maxCount || containsCoinId(ids, count, id)) return;
+    ids[count++] = id;
+}
+
+static void appendCoinIdsFromCsv(const String &src, String *ids, int &count, int maxCount)
+{
+    int start = 0;
+    for (int i = 0; i <= (int)src.length() && count < maxCount; i++)
+    {
+        if (i == (int)src.length() || src[i] == ',')
+        {
+            String token = src.substring(start, i);
+            token.trim();
+            appendUniqueCoinId(ids, count, maxCount, token);
+            start = i + 1;
+        }
+    }
+}
+
+static String joinCoinIds(const String *ids, int count)
+{
+    String joined;
+    for (int i = 0; i < count; i++)
+    {
+        if (i > 0) joined += ",";
+        joined += ids[i];
+    }
+    return joined;
+}
+
+static bool appendRandomTrendingCoin(String *ids, int &count, int maxCount)
+{
+    HTTPClient http;
+    http.begin("https://api.coingecko.com/api/v3/search/trending");
+    http.useHTTP10(true);
+    http.setTimeout(10000);
+
+    int httpCode = http.GET();
+    if (httpCode != HTTP_CODE_OK)
+    {
+        Serial.print("Trending fetch failed, HTTP: ");
+        Serial.println(httpCode);
+        http.end();
+        return false;
+    }
+
+    StaticJsonDocument<128> filter;
+    filter["coins"][0]["item"]["id"] = true;
+
+    DynamicJsonDocument json(3072);
+    DeserializationError error = deserializeJson(json, http.getStream(), DeserializationOption::Filter(filter));
+    http.end();
+
+    if (error)
+    {
+        Serial.print("Trending JSON parse failed: ");
+        Serial.println(error.c_str());
+        return false;
+    }
+
+    String chosenId;
+    int eligibleCount = 0;
+    JsonArrayConst trending = json["coins"].as<JsonArrayConst>();
+    for (JsonObjectConst wrapper : trending)
+    {
+        String id = wrapper["item"]["id"] | "";
+        if (id.length() == 0 || containsCoinId(ids, count, id)) continue;
+
+        eligibleCount++;
+        if (eligibleCount == 1 || random(eligibleCount) == 0)
+            chosenId = id;
+    }
+
+    if (chosenId.length() == 0) return false;
+
+    appendUniqueCoinId(ids, count, maxCount, chosenId);
+    return true;
+}
+
+static int appendRandomHighVolumeCoins(String *ids, int &count, int maxCount, int desiredCount)
+{
+    HTTPClient http;
+    http.begin("https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=volume_desc&per_page=100&page=1");
+    http.useHTTP10(true);
+    http.setTimeout(15000);
+
+    int httpCode = http.GET();
+    if (httpCode != HTTP_CODE_OK)
+    {
+        Serial.print("High-volume fetch failed, HTTP: ");
+        Serial.println(httpCode);
+        http.end();
+        return 0;
+    }
+
+    StaticJsonDocument<64> filter;
+    filter[0]["id"] = true;
+
+    DynamicJsonDocument json(8192);
+    DeserializationError error = deserializeJson(json, http.getStream(), DeserializationOption::Filter(filter));
+    http.end();
+
+    if (error)
+    {
+        Serial.print("High-volume JSON parse failed: ");
+        Serial.println(error.c_str());
+        return 0;
+    }
+
+    String reservoir[2];
+    int reservoirSize = 0;
+    int eligibleCount = 0;
+
+    JsonArrayConst markets = json.as<JsonArrayConst>();
+    for (JsonObjectConst entry : markets)
+    {
+        String id = entry["id"] | "";
+        if (id.length() == 0 || containsCoinId(ids, count, id)) continue;
+
+        bool alreadyPicked = false;
+        for (int i = 0; i < reservoirSize; i++)
+        {
+            if (reservoir[i] == id)
+            {
+                alreadyPicked = true;
+                break;
+            }
+        }
+        if (alreadyPicked) continue;
+
+        eligibleCount++;
+        if (reservoirSize < desiredCount)
+        {
+            reservoir[reservoirSize++] = id;
+            continue;
+        }
+
+        int slot = random(eligibleCount);
+        if (slot < desiredCount)
+            reservoir[slot] = id;
+    }
+
+    int added = 0;
+    for (int i = 0; i < reservoirSize; i++)
+    {
+        int before = count;
+        appendUniqueCoinId(ids, count, maxCount, reservoir[i]);
+        if (count > before) added++;
+    }
+    return added;
+}
+
+static void resolveDynamicDefaultCoinIds()
+{
+    if (!projectConfig.usesDefaultCryptoIds()) return;
+
+    String resolvedIds[MAX_COINS];
+    int resolvedCount = 0;
+    appendCoinIdsFromCsv(String(DEFAULT_CORE_CRYPTO_IDS), resolvedIds, resolvedCount, MAX_COINS);
+
+    appendRandomTrendingCoin(resolvedIds, resolvedCount, MAX_COINS);
+    appendRandomHighVolumeCoins(resolvedIds, resolvedCount, MAX_COINS, 2);
+
+    String dynamicIds = joinCoinIds(resolvedIds, resolvedCount);
+    if (dynamicIds.length() == 0) return;
+
+    projectConfig.cryptoIds = dynamicIds;
+    Serial.print("Dynamic default coins: ");
+    Serial.println(projectConfig.cryptoIds);
 }
 
 // Split a comma-separated string into the coins[] array
@@ -246,8 +429,6 @@ void baseProjectSetup()
     if (!projectConfig.fetchConfigFile())
         forceConfig = true;
 
-    initCoins();
-
     setupWiFiManager(forceConfig, projectConfig, projectDisplay);
 
     int attempts = 0;
@@ -261,6 +442,9 @@ void baseProjectSetup()
         projectDisplay->showMessage("WiFi failed!");
         while (1) yield();
     }
+
+    resolveDynamicDefaultCoinIds();
+    initCoins();
 
     projectDisplay->showMessage("Fetching prices...");
     fetchPrices();
@@ -326,6 +510,7 @@ void baseProjectLoop()
 void setup()
 {
     Serial.begin(115200);
+    randomSeed((unsigned long)esp_random());
     baseProjectSetup();
 }
 
