@@ -115,27 +115,14 @@ static void _drawPriceBlock(lv_obj_t *parent,
     String usd = _fmtUSD(coin.usdPrice);
     lv_obj_t *price = _mkLabel(parent, usd.c_str(), C_TEXT1, &lv_font_montserrat_24);
     lv_obj_set_pos(price, 12, 72);
-
-    // 24h change badge pill + USD amount
-    const PriceChangeData &c24 = coin.change24h;
-    if (c24.available)
-    {
-        uint32_t col = c24.percent >= 0 ? C_GREEN : C_RED;
-        String pct   = _fmtSignedPercent(c24.percent);
-        _mkPill(parent, 12, 108, 62, 18, _dimBg(col), col, pct.c_str(), col, &lv_font_montserrat_12);
-
-        String amt = _fmtSignedUSD(c24.usdAmount);
-        lv_obj_t *amtLbl = _mkLabel(parent, amt.c_str(), C_TEXT3, &lv_font_montserrat_12);
-        lv_obj_set_pos(amtLbl, 80, 111);
-    }
 }
 
 // ── Metrics columns (24H / 7D / 1M) ──────────────────────────────────────────
 static void _drawMetrics(lv_obj_t *parent, const CryptoData &coin)
 {
-    // Vertical hairline dividers between columns
-    _mkBar(parent, 12 + 96,  138, 1, 72, C_BORDER);
-    _mkBar(parent, 12 + 192, 138, 1, 72, C_BORDER);
+    // Vertical hairline dividers between columns.
+    _mkBar(parent, 108, 138, 1, 72, C_BORDER);
+    _mkBar(parent, 204, 138, 1, 72, C_BORDER);
 
     const PriceChangeData *changes[3] = {
         &coin.change24h, &coin.change7d, &coin.change30d
@@ -144,7 +131,7 @@ static void _drawMetrics(lv_obj_t *parent, const CryptoData &coin)
 
     for (int i = 0; i < 3; i++)
     {
-        int mx = 12 + i * 96 + 6;
+        int mx = 18 + i * 96;
         const PriceChangeData &c = *changes[i];
         uint32_t col = _changeColor(c);
 
