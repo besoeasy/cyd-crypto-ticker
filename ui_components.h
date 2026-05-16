@@ -95,22 +95,24 @@ static void _drawHeader(lv_obj_t *parent,
 }
 
 // ── Price block ───────────────────────────────────────────────────────────────
+static const lv_font_t *_priceFontForText(const String &price)
+{
+    int len = price.length();
+    if (len <= 10) return &lv_font_montserrat_24;
+    if (len <= 16) return &lv_font_montserrat_16;
+    return &lv_font_montserrat_16;
+}
+
 static void _drawPriceBlock(lv_obj_t *parent,
                              const CryptoData &coin,
                              uint32_t          accent)
 {
-    // INR label + value (right-aligned)
-    lv_obj_t *inrLbl = _mkLabel(parent, "INR", C_TEXT3, &lv_font_montserrat_12);
-    lv_obj_align(inrLbl, LV_ALIGN_TOP_RIGHT, -12, 60);
-
-    String inr = coin.hasInr ? _fmtINR(coin.inrPrice) : String("N/A");
-    lv_obj_t *inrVal = _mkLabel(parent, inr.c_str(), C_TEXT2, &lv_font_montserrat_12);
-    lv_obj_align(inrVal, LV_ALIGN_TOP_RIGHT, -12, 76);
+    (void)accent;
 
     // Big USD price
     String usd = _fmtUSD(coin.usdPrice);
-    lv_obj_t *price = _mkLabel(parent, usd.c_str(), C_TEXT1, &lv_font_montserrat_24);
-    lv_obj_set_pos(price, 12, 72);
+    lv_obj_t *price = _mkLabel(parent, usd.c_str(), C_TEXT1, _priceFontForText(usd));
+    lv_obj_set_pos(price, 12, 80);
 }
 
 // ── Metrics columns (24H / 7D / 1M) ──────────────────────────────────────────
