@@ -17,6 +17,13 @@ Install [PlatformIO](https://platformio.org/), then run:
 pio run -e cyd --target upload
 ```
 
+or
+
+```bash
+~/.platformio/penv/bin/pio run -e cyd --target upload
+
+```
+
 For CYD boards with USB on the opposite side (CYD2USB), use:
 
 ```bash
