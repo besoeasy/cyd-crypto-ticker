@@ -121,8 +121,8 @@ static void _drawPriceBlock(lv_obj_t *parent,
 static void _drawMetrics(lv_obj_t *parent, const CryptoData &coin)
 {
     // Vertical hairline dividers between columns.
-    _mkBar(parent, 108, 138, 1, 72, C_BORDER);
-    _mkBar(parent, 204, 138, 1, 72, C_BORDER);
+    _mkBar(parent, 108, 138, 1, 86, C_BORDER);
+    _mkBar(parent, 204, 138, 1, 86, C_BORDER);
 
     const PriceChangeData *changes[3] = {
         &coin.change24h, &coin.change7d, &coin.change30d
@@ -136,15 +136,15 @@ static void _drawMetrics(lv_obj_t *parent, const CryptoData &coin)
         uint32_t col = _changeColor(c);
 
         lv_obj_t *lbl = _mkLabel(parent, labels[i], C_TEXT3, &lv_font_montserrat_12);
-        lv_obj_set_pos(lbl, mx, 142);
+        lv_obj_set_pos(lbl, mx, 148);
 
         String pct = c.available ? _fmtSignedPercent(c.percent) : "--";
         lv_obj_t *pctLbl = _mkLabel(parent, pct.c_str(), col, &lv_font_montserrat_16);
-        lv_obj_set_pos(pctLbl, mx, 158);
+        lv_obj_set_pos(pctLbl, mx, 170);
 
         String amt = c.available ? _fmtSignedUSD(c.usdAmount) : "N/A";
         lv_obj_t *amtLbl = _mkLabel(parent, amt.c_str(), C_TEXT3, &lv_font_montserrat_12);
-        lv_obj_set_pos(amtLbl, mx, 178);
+        lv_obj_set_pos(amtLbl, mx, 198);
     }
 }
 
