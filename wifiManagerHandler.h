@@ -19,10 +19,12 @@ void configModeCallback(WiFiManager *myWiFiManager)
 void setupWiFiManager(bool forceConfig, ProjectConfig &config, ProjectDisplay *theDisplay)
 {
   wm_Display = theDisplay;
+  shouldSaveConfig = false;
   WiFiManager wm;
 
   wm.setSaveConfigCallback(saveConfigCallback);
   wm.setAPCallback(configModeCallback);
+  wm.setBreakAfterConfig(true);
 
   WiFiManagerParameter cryptoIdsParam(
       CONFIG_CRYPTO_IDS,
