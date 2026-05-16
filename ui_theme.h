@@ -35,6 +35,15 @@ static CoinTheme _getCoinTheme(const String &id)
     return {0x6B7DB3, symBuf, nameBuf};
 }
 
+// Darken an RGB hex colour to ~13% for badge/pill backgrounds
+static uint32_t _dimBg(uint32_t hex)
+{
+    uint8_t r = ((hex >> 16) & 0xFF) * 13 / 100;
+    uint8_t g = ((hex >>  8) & 0xFF) * 13 / 100;
+    uint8_t b = ((hex      ) & 0xFF) * 13 / 100;
+    return ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
+}
+
 // Darken an RGB hex colour to ~30% for dim accent backgrounds
 static uint32_t _dim(uint32_t hex)
 {

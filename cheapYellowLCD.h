@@ -79,11 +79,9 @@ public:
         lv_obj_t *scr = lv_scr_act();
         lv_obj_clean(scr);
         _styleScreen(scr);
-        _drawBackdrop(scr, C_BLUE);
+        _mkBar(scr, 0, 0, 320, 1, C_BLUE);
 
-        _mkBar(scr, 0, 0, 320, 4, C_BLUE);
-
-        lv_obj_t *hero = _mkCard(scr, 7, 8, 306, 48, 0x12152F, 0x090B1E, C_BORDER, 14);
+        lv_obj_t *hero = _mkCard(scr, 7, 8, 306, 48, 0x0A0A0A, 0x050505, C_BORDER, 8);
         _mkPill(hero, 10, 10, 58, 20, 0x0A1024, C_BORDER, "PORTAL", C_BLUE, &lv_font_montserrat_12);
         lv_obj_t *title = _mkLabel(hero, "WiFi setup", C_TEXT1, &lv_font_montserrat_16);
         lv_obj_set_pos(title, 10, 28);
@@ -120,7 +118,6 @@ public:
         const CryptoData &coin = coins[index];
         CoinTheme th = _getCoinTheme(coin.id);
         uint32_t  C  = th.hex;
-        uint32_t  Cd = _dim(C);
 
         // Determine slide direction based on previous index
         int fromX = 0;
@@ -136,11 +133,10 @@ public:
         lv_obj_clean(scr);
         _styleScreen(scr);
 
-        // Backdrop and accent bar stay on scr (do not slide)
-        _drawBackdrop(scr, C);
-        _mkBar(scr, 0, 0, 320, 4, C);
+        // 1px accent bar stays on scr (does not slide)
+        _mkBar(scr, 0, 0, 320, 1, C);
 
-        // All card content goes in a transparent slide container
+        // All content goes in a transparent slide container
         lv_obj_t *cont = lv_obj_create(scr);
         lv_obj_set_size(cont, 320, 240);
         lv_obj_set_pos(cont, 0, 0);
@@ -149,19 +145,19 @@ public:
         lv_obj_set_style_pad_all(cont,      0,             0);
         lv_obj_clear_flag(cont, LV_OBJ_FLAG_SCROLLABLE);
 
-        _drawHeaderCard(cont, th, count, index, C, Cd);
+        _drawHeader(cont, th, count, index, C);
+        _divider(cont, 54);
 
         if (coin.valid)
         {
-            _drawHeroCard(cont, coin, th, C);
-            _drawMetricStrip(cont, coin);
+            _drawPriceBlock(cont, coin, C);
+            _divider(cont, 132);
+            _drawMetrics(cont, coin);
         }
         else
         {
             _drawEmptyState(cont, "Price unavailable");
         }
-
-        _drawNavDock(cont);
 
         // Slide in from the correct side (or plain flush on first render)
         _slideIn(cont, fromX);
@@ -172,9 +168,9 @@ public:
         lv_obj_t *scr = lv_scr_act();
         lv_obj_clean(scr);
         _styleScreen(scr);
-        _drawBackdrop(scr, C_BLUE);
+        _mkBar(scr, 0, 0, 320, 1, C_BLUE);
 
-        lv_obj_t *card = _mkCard(scr, 38, 54, 244, 128, 0x11142F, 0x090B1E, C_BORDER, 18);
+        lv_obj_t *card = _mkCard(scr, 38, 54, 244, 128, 0x0A0A0A, 0x050505, C_BORDER, 8);
         _mkPill(card, 82, 16, 80, 22, 0x0A1024, C_BORDER, "WORKING", C_BLUE, &lv_font_montserrat_12);
 
         lv_obj_t *spin = lv_spinner_create(card, 1200, 80);

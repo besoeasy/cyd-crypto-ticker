@@ -6,17 +6,14 @@
 #include "ui_formatters.h"
 #include "projectDisplay.h"
 
-// ── Decorative backdrop (placed directly on scr – does not slide) ─────────────
-
-static void _drawBackdrop(lv_obj_t *scr, uint32_t accent)
+// ── Change colour helper ──────────────────────────────────────────────────────
+static uint32_t _changeColor(const PriceChangeData &change)
 {
-    _mkOrb(scr, -26, -10, 88, accent,   LV_OPA_20);
-    _mkOrb(scr, 250,  10, 64, 0x1A224A, LV_OPA_40);
-    _mkOrb(scr, 230, 162, 96, accent,   LV_OPA_10);
+    if (!change.available) return C_TEXT3;
+    return change.percent < 0 ? C_RED : C_GREEN;
 }
 
 // ── Pagination dots ───────────────────────────────────────────────────────────
-
 static void _drawPageDots(lv_obj_t *parent, int count, int index,
                            int right, int y, uint32_t accent)
 {
@@ -36,136 +33,126 @@ static void _drawPageDots(lv_obj_t *parent, int count, int index,
     }
 }
 
-// ── Header card (coin badge + name + page dots) ───────────────────────────────
-
-static lv_obj_t *_drawHeaderCard(lv_obj_t *parent,
-                                  const CoinTheme &theme,
-                                  int count, int index,
-                                  uint32_t accent, uint32_t accentDim)
+// ── Thin horizontal divider ───────────────────────────────────────────────────
+static void _divider(lv_obj_t *parent, int y)
 {
-    lv_obj_t *hdr = _mkCard(parent, 7, 8, 306, 52, 0x12142F, 0x0A0C21, C_BORDER, 14);
-    _mkOrb(hdr, -14, -12, 50, accent, LV_OPA_20);
-
-    lv_obj_t *badge = lv_obj_create(hdr);
-    lv_obj_set_size(badge, 40, 40);
-    lv_obj_set_pos(badge, 8, 6);
-    lv_obj_set_style_radius(badge,       LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(badge,     lv_color_hex(accentDim), 0);
-    lv_obj_set_style_bg_opa(badge,       LV_OPA_COVER, 0);
-    lv_obj_set_style_border_color(badge, lv_color_hex(accent), 0);
-    lv_obj_set_style_border_width(badge, 2, 0);
-    lv_obj_set_style_pad_all(badge,      0, 0);
-    lv_obj_clear_flag(badge, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t *sym = _mkLabel(badge, theme.symbol, accent, &lv_font_montserrat_12);
-    lv_obj_align(sym, LV_ALIGN_CENTER, 0, 0);
-
-    lv_obj_t *eyebrow = _mkLabel(hdr, "LIVE MARKET", C_TEXT3, &lv_font_montserrat_12);
-    lv_obj_set_pos(eyebrow, 58, 8);
-    lv_obj_t *name = _mkLabel(hdr, theme.name, C_TEXT1, &lv_font_montserrat_16);
-    lv_obj_set_pos(name, 58, 22);
-
-    _drawPageDots(hdr, count, index, 292, 23, accent);
-    return hdr;
+    _mkBar(parent, 12, y, 296, 1, C_BORDER);
 }
 
-// ── Price hero card ───────────────────────────────────────────────────────────
-
-static lv_obj_t *_drawHeroCard(lv_obj_t *parent,
-                                const CryptoData &coin,
-                                const CoinTheme  &theme,
-                                uint32_t          accent)
+// ── Header row: dot + name + symbol pill | page dots + eyebrow ───────────────
+static void _drawHeader(lv_obj_t *parent,
+                        const CoinTheme &theme,
+                        int count, int index,
+                        uint32_t accent)
 {
-    lv_obj_t *card = _mkCard(parent, 7, 70, 306, 76, 0x15183A, 0x0B0D22, accent, 18);
-    _mkBar(card, 0, 0, 306, 4, accent);
-    _mkOrb(card, 234, -12, 72, accent, LV_OPA_10);
+    // Filled accent dot
+    lv_obj_t *dot = lv_obj_create(parent);
+    lv_obj_set_size(dot, 8, 8);
+    lv_obj_set_pos(dot, 14, 22);
+    lv_obj_set_style_radius(dot,       LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(dot,     lv_color_hex(accent), 0);
+    lv_obj_set_style_bg_opa(dot,       LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(dot, 0, 0);
+    lv_obj_set_style_pad_all(dot,      0, 0);
+    lv_obj_clear_flag(dot, LV_OBJ_FLAG_SCROLLABLE);
 
-    _mkPill(card, 14, 12, 54, 20, 0x0B1028, C_BORDER, "SPOT",        C_TEXT3, &lv_font_montserrat_12);
-    _mkPill(card, 226, 12, 66, 20, 0x0B1028, C_BORDER, theme.symbol, accent,  &lv_font_montserrat_12);
+    // Coin name
+    lv_obj_t *name = _mkLabel(parent, theme.name, C_TEXT1, &lv_font_montserrat_16);
+    lv_obj_set_pos(name, 28, 16);
 
+    // Eyebrow below name
+    lv_obj_t *eyebrow = _mkLabel(parent, "LIVE", C_TEXT3, &lv_font_montserrat_12);
+    lv_obj_set_pos(eyebrow, 28, 36);
+
+    // Symbol pill — fixed right-side position
+    uint32_t pillBg = _dimBg(accent);
+    _mkPill(parent, 222, 18, 54, 18, pillBg, accent, theme.symbol, accent, &lv_font_montserrat_12);
+
+    // Page dots
+    _drawPageDots(parent, count, index, 310, 23, accent);
+}
+
+// ── Price block ───────────────────────────────────────────────────────────────
+static void _drawPriceBlock(lv_obj_t *parent,
+                             const CryptoData &coin,
+                             uint32_t          accent)
+{
+    // "SPOT PRICE" eyebrow
+    lv_obj_t *spot = _mkLabel(parent, "SPOT PRICE", C_TEXT3, &lv_font_montserrat_12);
+    lv_obj_set_pos(spot, 12, 60);
+
+    // INR label + value (right-aligned)
+    lv_obj_t *inrLbl = _mkLabel(parent, "INR", C_TEXT3, &lv_font_montserrat_12);
+    lv_obj_align(inrLbl, LV_ALIGN_TOP_RIGHT, -12, 60);
+
+    String inr = coin.hasInr ? _fmtINR(coin.inrPrice) : String("N/A");
+    lv_obj_t *inrVal = _mkLabel(parent, inr.c_str(), C_TEXT2, &lv_font_montserrat_12);
+    lv_obj_align(inrVal, LV_ALIGN_TOP_RIGHT, -12, 76);
+
+    // Big USD price
     String usd = _fmtUSD(coin.usdPrice);
-    lv_obj_t *price = _mkLabel(card, usd.c_str(), C_TEXT1, &lv_font_montserrat_24);
-    lv_obj_set_pos(price, 14, 30);
+    lv_obj_t *price = _mkLabel(parent, usd.c_str(), C_TEXT1, &lv_font_montserrat_24);
+    lv_obj_set_pos(price, 12, 72);
 
-    String inr = coin.hasInr ? _fmtINR(coin.inrPrice) : String("INR N/A");
-    lv_obj_t *inrLabel = _mkLabel(card, inr.c_str(), C_TEXT2, &lv_font_montserrat_12);
-    lv_obj_align(inrLabel, LV_ALIGN_BOTTOM_RIGHT, -14, -10);
-    return card;
+    // 24h change badge pill + USD amount
+    const PriceChangeData &c24 = coin.change24h;
+    if (c24.available)
+    {
+        uint32_t col = c24.percent >= 0 ? C_GREEN : C_RED;
+        String pct   = _fmtSignedPercent(c24.percent);
+        _mkPill(parent, 12, 108, 62, 18, _dimBg(col), col, pct.c_str(), col, &lv_font_montserrat_12);
+
+        String amt = _fmtSignedUSD(c24.usdAmount);
+        lv_obj_t *amtLbl = _mkLabel(parent, amt.c_str(), C_TEXT3, &lv_font_montserrat_12);
+        lv_obj_set_pos(amtLbl, 80, 111);
+    }
 }
 
-// ── Individual change metric tile ─────────────────────────────────────────────
-
-static uint32_t _changeColor(const PriceChangeData &change)
+// ── Metrics columns (24H / 7D / 1M) ──────────────────────────────────────────
+static void _drawMetrics(lv_obj_t *parent, const CryptoData &coin)
 {
-    if (!change.available) return C_TEXT3;
-    return change.percent < 0 ? 0xF07070 : 0x35C46A;
+    // Vertical hairline dividers between columns
+    _mkBar(parent, 12 + 96,  138, 1, 72, C_BORDER);
+    _mkBar(parent, 12 + 192, 138, 1, 72, C_BORDER);
+
+    const PriceChangeData *changes[3] = {
+        &coin.change24h, &coin.change7d, &coin.change30d
+    };
+    const char *labels[3] = { "24H", "7D", "1M" };
+
+    for (int i = 0; i < 3; i++)
+    {
+        int mx = 12 + i * 96 + 6;
+        const PriceChangeData &c = *changes[i];
+        uint32_t col = _changeColor(c);
+
+        lv_obj_t *lbl = _mkLabel(parent, labels[i], C_TEXT3, &lv_font_montserrat_12);
+        lv_obj_set_pos(lbl, mx, 142);
+
+        String pct = c.available ? _fmtSignedPercent(c.percent) : "--";
+        lv_obj_t *pctLbl = _mkLabel(parent, pct.c_str(), col, &lv_font_montserrat_16);
+        lv_obj_set_pos(pctLbl, mx, 158);
+
+        String amt = c.available ? _fmtSignedUSD(c.usdAmount) : "N/A";
+        lv_obj_t *amtLbl = _mkLabel(parent, amt.c_str(), C_TEXT3, &lv_font_montserrat_12);
+        lv_obj_set_pos(amtLbl, mx, 178);
+    }
 }
 
-static void _drawChangeCard(lv_obj_t *parent,
-                             int x, int y, int w, int h,
-                             const char *label,
-                             const PriceChangeData &change)
-{
-    uint32_t color = _changeColor(change);
-    lv_obj_t *card = _mkCard(parent, x, y, w, h, 0x12152F, 0x0B0D21, C_BORDER, 14);
-    _mkOrb(card, w - 26, -10, 34, color, LV_OPA_20);
-
-    _mkPill(card, 8, 8, 38, 18, 0x0A1024, C_BORDER, label, C_TEXT3, &lv_font_montserrat_12);
-
-    String percent = change.available ? _fmtSignedPercent(change.percent) : "--";
-    lv_obj_t *percentLabel = _mkLabel(card, percent.c_str(), color, &lv_font_montserrat_16);
-    lv_obj_set_pos(percentLabel, 8, 28);
-
-    String amount = change.available ? _fmtSignedUSD(change.usdAmount) : "N/A";
-    lv_obj_t *amountLabel = _mkLabel(card, amount.c_str(), C_TEXT2, &lv_font_montserrat_12);
-    lv_obj_set_pos(amountLabel, 8, 50);
-}
-
-// ── 24H / 7D / 1M strip ──────────────────────────────────────────────────────
-
-static void _drawMetricStrip(lv_obj_t *parent, const CryptoData &coin)
-{
-    _drawChangeCard(parent,   7, 156, 96, 64, "24H", coin.change24h);
-    _drawChangeCard(parent, 112, 156, 96, 64, "7D",  coin.change7d);
-    _drawChangeCard(parent, 217, 156, 96, 64, "1M",  coin.change30d);
-}
-
-// ── Bottom navigation dock ────────────────────────────────────────────────────
-
-static void _drawNavDock(lv_obj_t *parent)
-{
-    lv_obj_t *dock = _mkCard(parent, 44, 221, 232, 16, 0x0E1026, 0x0A0C1C, C_BORDER, 10);
-    lv_obj_t *left    = _mkLabel(dock, LV_SYMBOL_LEFT,    C_TEXT3, &lv_font_montserrat_12);
-    lv_obj_set_pos(left, 10, 2);
-    lv_obj_t *refresh = _mkLabel(dock, LV_SYMBOL_REFRESH, C_TEXT3, &lv_font_montserrat_12);
-    lv_obj_align(refresh, LV_ALIGN_CENTER, 0, 0);
-    lv_obj_t *right   = _mkLabel(dock, LV_SYMBOL_RIGHT,   C_TEXT3, &lv_font_montserrat_12);
-    lv_obj_align(right, LV_ALIGN_RIGHT_MID, -10, 0);
-
-    lv_obj_t *hint = _mkLabel(parent, "Swipe zones: prev / refresh / next",
-                               C_TEXT3, &lv_font_montserrat_12);
-    lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -1);
-}
-
-// ── Offline / error state card ────────────────────────────────────────────────
-
+// ── Offline / error state ─────────────────────────────────────────────────────
 static void _drawEmptyState(lv_obj_t *parent, const char *message)
 {
-    lv_obj_t *card = _mkCard(parent, 7, 70, 306, 150, 0x200A0A, 0x100408, 0x5A1818, 18);
-    _mkPill(card, 112, 18, 82, 22, 0x341113, 0x5A1818, "OFFLINE", 0xF07070, &lv_font_montserrat_12);
-    lv_obj_t *msg = _mkLabel(card, message, 0xFFD0D0, &lv_font_montserrat_16);
-    lv_obj_align(msg, LV_ALIGN_CENTER, 0, -2);
+    _mkPill(parent, 118, 96, 84, 22, _dimBg(C_RED), C_RED, "OFFLINE", C_RED, &lv_font_montserrat_12);
+    lv_obj_t *msg = _mkLabel(parent, message, C_TEXT3, &lv_font_montserrat_16);
+    lv_obj_align(msg, LV_ALIGN_CENTER, 0, 20);
 }
 
-// ── Slide-in animation helper ─────────────────────────────────────────────────
-// Wraps lv_obj_set_x for use as an lv_anim_exec_xcb_t callback.
-
+// ── Slide-in animation ────────────────────────────────────────────────────────
 static void _animSetX(void *obj, int32_t val)
 {
     lv_obj_set_x((lv_obj_t *)obj, (lv_coord_t)val);
 }
 
-// Animate 'cont' sliding in from 'fromX' to x=0, then pump LVGL until done.
 static void _slideIn(lv_obj_t *cont, int fromX)
 {
     if (fromX == 0) { _lvFlush(); return; }
