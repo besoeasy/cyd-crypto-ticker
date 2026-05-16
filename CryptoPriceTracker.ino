@@ -82,10 +82,31 @@ static bool containsCoinId(const String *ids, int count, const String &id)
     return false;
 }
 
+static String normalizeCoinId(String id)
+{
+    id.trim();
+    id.toLowerCase();
+    id.replace(" ", "-");
+
+    if (id == "btc") return "bitcoin";
+    if (id == "eth") return "ethereum";
+    if (id == "sol") return "solana";
+    if (id == "ton" || id == "toncoin") return "the-open-network";
+    if (id == "bnb") return "binancecoin";
+    if (id == "xrp") return "ripple";
+    if (id == "doge") return "dogecoin";
+    if (id == "ada") return "cardano";
+    if (id == "dot") return "polkadot";
+    if (id == "link") return "chainlink";
+
+    return id;
+}
+
 static void appendUniqueCoinId(String *ids, int &count, int maxCount, const String &id)
 {
-    if (id.length() == 0 || count >= maxCount || containsCoinId(ids, count, id)) return;
-    ids[count++] = id;
+    String normalized = normalizeCoinId(id);
+    if (normalized.length() == 0 || count >= maxCount || containsCoinId(ids, count, normalized)) return;
+    ids[count++] = normalized;
 }
 
 static void appendCoinIdsFromCsv(const String &src, String *ids, int &count, int maxCount)
@@ -112,6 +133,32 @@ static String joinCoinIds(const String *ids, int count)
         joined += ids[i];
     }
     return joined;
+}
+
+static bool hasAnyValidCoin(const CryptoData *data, int count)
+{
+    for (int i = 0; i < count; i++)
+    {
+        if (data[i].valid) return true;
+    }
+    return false;
+}
+
+static void normalizeConfiguredCoinIds()
+{
+    String normalizedIds[MAX_COINS];
+    int normalizedCount = 0;
+    appendCoinIdsFromCsv(projectConfig.cryptoIds, normalizedIds, normalizedCount, MAX_COINS);
+
+    String normalized = joinCoinIds(normalizedIds, normalizedCount);
+    if (normalized.length() == 0) return;
+
+    if (normalized != projectConfig.cryptoIds)
+    {
+        Serial.print("Normalized coin IDs: ");
+        Serial.println(normalized);
+        projectConfig.cryptoIds = normalized;
+    }
 }
 
 static bool appendRandomTrendingCoin(String *ids, int &count, int maxCount)
@@ -265,8 +312,7 @@ void initCoins()
     {
         if (i == (int)src.length() || src[i] == ',')
         {
-            String token = src.substring(start, i);
-            token.trim();
+            String token = normalizeCoinId(src.substring(start, i));
             if (token.length() > 0)
             {
                 coins[coinCount] = CryptoData();
@@ -278,9 +324,15 @@ void initCoins()
     }
 }
 
-void fetchPrices()
+void fetchPrices(bool allowDefaultFallback = true)
 {
     if (coinCount == 0) return;
+
+    CryptoData previousCoins[MAX_COINS];
+    for (int i = 0; i < coinCount; i++)
+        previousCoins[i] = coins[i];
+
+    bool hadValidBefore = hasAnyValidCoin(previousCoins, coinCount);
 
     for (int i = 0; i < coinCount; i++)
         resetCoinMarketData(coins[i]);
@@ -403,6 +455,28 @@ void fetchPrices()
         Serial.println(simpleCode);
     }
     simpleHttp.end();
+
+    if (!hasAnyValidCoin(coins, coinCount))
+    {
+        Serial.print("No valid prices returned for IDs: ");
+        Serial.println(ids);
+
+        if (hadValidBefore)
+        {
+            Serial.println("Keeping previous prices after fetch failure");
+            for (int i = 0; i < coinCount; i++)
+                coins[i] = previousCoins[i];
+            return;
+        }
+
+        if (allowDefaultFallback && !projectConfig.usesDefaultCryptoIds())
+        {
+            Serial.println("Falling back to default coin IDs");
+            projectConfig.cryptoIds = String(DEFAULT_CORE_CRYPTO_IDS);
+            initCoins();
+            fetchPrices(false);
+        }
+    }
 }
 
 void baseProjectSetup()
@@ -444,6 +518,7 @@ void baseProjectSetup()
     }
 
     resolveDynamicDefaultCoinIds();
+    normalizeConfiguredCoinIds();
     initCoins();
 
     projectDisplay->showMessage("Fetching prices...");

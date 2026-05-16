@@ -6,6 +6,8 @@
 #include "ui_formatters.h"
 #include "projectDisplay.h"
 
+#include <string.h>
+
 // ── Change colour helper ──────────────────────────────────────────────────────
 static uint32_t _changeColor(const PriceChangeData &change)
 {
@@ -15,15 +17,33 @@ static uint32_t _changeColor(const PriceChangeData &change)
 
 // ── Pagination dots ───────────────────────────────────────────────────────────
 static void _drawPageDots(lv_obj_t *parent, int count, int index,
-                           int right, int y, uint32_t accent)
+                           int left, int right, int y, uint32_t accent)
 {
-    int dotW = count * 10 - 4;
+    if (count <= 0 || right <= left) return;
+
+    int dotSize = 6;
+    int gap = 4;
+    int available = right - left;
+    int dotW = count * dotSize + (count - 1) * gap;
+
+    while (dotW > available && gap > 2)
+    {
+        gap--;
+        dotW = count * dotSize + (count - 1) * gap;
+    }
+
+    while (dotW > available && dotSize > 4)
+    {
+        dotSize--;
+        dotW = count * dotSize + (count - 1) * gap;
+    }
+
     int x0   = right - dotW;
     for (int i = 0; i < count; i++)
     {
         lv_obj_t *dot = lv_obj_create(parent);
-        lv_obj_set_size(dot, 6, 6);
-        lv_obj_set_pos(dot, x0 + i * 10, y);
+        lv_obj_set_size(dot, dotSize, dotSize);
+        lv_obj_set_pos(dot, x0 + i * (dotSize + gap), y + (6 - dotSize) / 2);
         lv_obj_set_style_radius(dot,       LV_RADIUS_CIRCLE, 0);
         lv_obj_set_style_border_width(dot, 0, 0);
         lv_obj_set_style_pad_all(dot,      0, 0);
@@ -64,12 +84,14 @@ static void _drawHeader(lv_obj_t *parent,
     lv_obj_t *eyebrow = _mkLabel(parent, "LIVE", C_TEXT3, &lv_font_montserrat_12);
     lv_obj_set_pos(eyebrow, 28, 36);
 
-    // Symbol pill — fixed right-side position
+    // Symbol pill uses content width and leaves the remaining right side for dots.
     uint32_t pillBg = _dimBg(accent);
-    _mkPill(parent, 222, 18, 54, 18, pillBg, accent, theme.symbol, accent, &lv_font_montserrat_12);
+    int pillW = max(32, (int)strlen(theme.symbol) * 7 + 12);
+    int pillX = 124;
+    _mkPill(parent, pillX, 18, pillW, 18, pillBg, accent, theme.symbol, accent, &lv_font_montserrat_12);
 
     // Page dots
-    _drawPageDots(parent, count, index, 310, 23, accent);
+    _drawPageDots(parent, count, index, pillX + pillW + 12, 308, 23, accent);
 }
 
 // ── Price block ───────────────────────────────────────────────────────────────
