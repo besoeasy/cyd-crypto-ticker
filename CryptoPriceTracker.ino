@@ -541,6 +541,13 @@ static void renderCurrentScreen()
         data.maxRandomCoinCount = maxRandomCoinCountForBaseCount(settingsDraftCoinCount);
         data.priceRefreshSeconds = settingsDraftPriceRefreshSeconds;
         data.rotateSeconds = settingsDraftRotateSeconds;
+        data.wifiConnected = WiFi.status() == WL_CONNECTED;
+        data.connectedSsid = data.wifiConnected ? WiFi.SSID() : String("Offline");
+        data.connectedIp = data.wifiConnected ? WiFi.localIP().toString() : String("No IP");
+        data.portalActive = isSettingsConfigPortalActive();
+        data.portalSsid = getSettingsConfigPortalSsid();
+        data.portalPassword = getSettingsConfigPortalPassword();
+        data.portalIp = getSettingsConfigPortalIp();
         data.dirty = settingsDirty;
         projectDisplay->drawSettingsScreen(data);
         return;
@@ -831,12 +838,24 @@ void baseProjectLoop()
 
     unsigned long now = millis();
 
+    if (processSettingsConfigPortal(projectConfig))
+    {
+        loadSettingsDraftFromConfig();
+        syncRuntimeIntervals();
+        refreshResolvedCoins();
+        fetchPrices();
+        lastPriceFetch = now;
+        lastAutoRotate = now;
+        renderCurrentScreen();
+    }
+
     // Touch interaction
     TouchAction action = projectDisplay->getTouchAction();
     if (action.type == TOUCH_PREV)
     {
         if (settingsScreenActive)
         {
+            stopSettingsConfigPortal();
             settingsScreenActive = false;
         }
         else if (coinCount > 0)
@@ -862,6 +881,7 @@ void baseProjectLoop()
     else if (action.type == TOUCH_OPEN_SETTINGS)
     {
         loadSettingsDraftFromConfig();
+        startSettingsConfigPortal(projectConfig, projectDisplay);
         settingsScreenActive = true;
         lastAutoRotate = now;
         renderCurrentScreen();
@@ -927,7 +947,7 @@ void baseProjectLoop()
         renderCurrentScreen();
     }
 
-    if (WiFi.status() != WL_CONNECTED)
+    if (!settingsScreenActive && !isSettingsConfigPortalActive() && WiFi.status() != WL_CONNECTED)
     {
         projectDisplay->showMessage("WiFi disconnected!");
         delay(3000);

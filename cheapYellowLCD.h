@@ -105,7 +105,7 @@ public:
         _mkPill(cc, 12, 10, 92, 18, 0x0A1024, C_BORDER, "CONFIGURE", C_TEXT3, &lv_font_montserrat_12);
         lv_obj_t *ipL = _mkLabel(cc, "http://192.168.4.1", C_BLUE, &lv_font_montserrat_16);
         lv_obj_set_pos(ipL, 12, 28);
-        lv_obj_t *hint = _mkLabel(cc, "Adjust coins later on the Settings tab", C_TEXT2, &lv_font_montserrat_12);
+        lv_obj_t *hint = _mkLabel(cc, "Settings will reopen this hotspot later", C_TEXT2, &lv_font_montserrat_12);
         lv_obj_set_pos(hint, 12, 50);
 
         lv_obj_t *ft = _mkLabel(scr, "Waiting for connection...", C_TEXT3, &lv_font_montserrat_12);
@@ -630,121 +630,56 @@ private:
 
         lv_obj_t *hero = _mkCard(scr, SETTINGS_HEADER_X, SETTINGS_HEADER_Y, SETTINGS_HEADER_W, SETTINGS_HEADER_H, 0x0A0A0A, 0x050505, C_BORDER, 8);
         _mkPill(hero, 10, 10, 78, 20, 0x0A1024, C_BORDER, "SETTINGS", C_BLUE, &lv_font_montserrat_12);
-        const char *titleText = "Settings home";
-        const char *subText = "Pick a category, then drill into sub settings";
-        if (_settingsPage == SETTINGS_COINS)
-        {
-            titleText = "Coin settings";
-            subText = "Icon menu -> Coins -> mix and random picks";
-        }
-        else if (_settingsPage == SETTINGS_DEVICE)
-        {
-            titleText = "Device settings";
-            subText = "Icon menu -> Device -> timing and WiFi tools";
-        }
-
-        lv_obj_t *title = _mkLabel(hero, titleText, C_TEXT1, &lv_font_montserrat_16);
+        lv_obj_t *title = _mkLabel(hero, "WiFi config", C_TEXT1, &lv_font_montserrat_16);
         lv_obj_set_pos(title, 10, 27);
-        lv_obj_t *sub = _mkLabel(hero, subText, C_TEXT3, &lv_font_montserrat_12);
+        lv_obj_t *sub = _mkLabel(hero, "Hotspot is active while this panel is open", C_TEXT3, &lv_font_montserrat_12);
         lv_obj_set_pos(sub, 104, 14);
 
-        if (_settingsPage == SETTINGS_HOME)
-            _renderSettingsHome(scr);
-        else if (_settingsPage == SETTINGS_COINS)
-            _renderCoinsSettings(scr);
-        else
-            _renderDeviceSettings(scr);
+        lv_obj_t *statusCard = _mkCard(scr, 7, 60, 306, 48, 0x14173A, 0x0B0E21, C_BORDER, 14);
+        _mkPill(statusCard, 12, 10, 68, 18,
+                _settingsData.wifiConnected ? 0x0E2A18 : 0x2A1010,
+                _settingsData.wifiConnected ? C_GREEN : C_RED,
+                _settingsData.wifiConnected ? "ONLINE" : "OFFLINE",
+                _settingsData.wifiConnected ? C_GREEN : C_RED,
+                &lv_font_montserrat_12);
+        lv_obj_t *ssidTitle = _mkLabel(statusCard, "WiFi", C_TEXT3, &lv_font_montserrat_12);
+        lv_obj_set_pos(ssidTitle, 94, 10);
+        lv_obj_t *ssidValue = _mkLabel(statusCard, _settingsData.connectedSsid.c_str(), C_TEXT1, &lv_font_montserrat_16);
+        lv_obj_set_pos(ssidValue, 94, 24);
+        lv_obj_t *ipValue = _mkLabel(statusCard, _settingsData.connectedIp.c_str(), C_TEXT3, &lv_font_montserrat_12);
+        lv_obj_set_pos(ipValue, 220, 12);
 
-        int maxScroll = (_settingsPage == SETTINGS_HOME) ? 0 : _settingsMaxScroll();
-        if (maxScroll > 0)
-        {
-            lv_obj_t *track = _mkCard(scr, 302, SETTINGS_VIEWPORT_Y + 8, 4, SETTINGS_VIEWPORT_H - 16, 0x1B1B1B, 0x1B1B1B, 0x1B1B1B, 2);
-            int thumbHeight = ((SETTINGS_VIEWPORT_H - 16) * SETTINGS_VIEWPORT_H) / _settingsContentHeight();
-            if (thumbHeight < 18) thumbHeight = 18;
-            int thumbTravel = (SETTINGS_VIEWPORT_H - 16) - thumbHeight;
-            int thumbY = SETTINGS_VIEWPORT_Y + 8;
-            if (thumbTravel > 0)
-                thumbY += (_settingsScrollY * thumbTravel) / maxScroll;
-            _mkCard(scr, 302, thumbY, 4, thumbHeight, C_BLUE, C_BLUE, C_BLUE, 2);
-        }
+        lv_obj_t *portalCard = _mkCard(scr, 7, 116, 306, 70, 0x14173A, 0x0B0E21, C_BORDER, 14);
+        _mkPill(portalCard, 12, 10, 84, 18,
+                _settingsData.portalActive ? 0x0A1024 : 0x161616,
+                _settingsData.portalActive ? C_BLUE : C_BORDER,
+                _settingsData.portalActive ? "HOTSPOT ON" : "HOTSPOT OFF",
+                _settingsData.portalActive ? C_BLUE : C_TEXT3,
+                &lv_font_montserrat_12);
+        lv_obj_t *portalSsid = _mkLabel(portalCard, _settingsData.portalSsid.c_str(), C_TEXT1, &lv_font_montserrat_16);
+        lv_obj_set_pos(portalSsid, 12, 30);
+        String portalMeta = String("PW ") + _settingsData.portalPassword + String("  ") + _settingsData.portalIp;
+        lv_obj_t *portalInfo = _mkLabel(portalCard, portalMeta.c_str(), C_TEXT3, &lv_font_montserrat_12);
+        lv_obj_set_pos(portalInfo, 12, 50);
+
+        lv_obj_t *helpCard = _mkCard(scr, 7, 194 - 32, 306, 38, 0x0A0A0A, 0x050505, C_BORDER, 12);
+        lv_obj_t *help1 = _mkLabel(helpCard, "Use phone or laptop to join the hotspot and change all settings.", C_TEXT2, &lv_font_montserrat_12);
+        lv_obj_set_pos(help1, 12, 8);
+        lv_obj_t *help2 = _mkLabel(helpCard, "Portal fields control coins, random picks, refresh, and rotate.", C_TEXT3, &lv_font_montserrat_12);
+        lv_obj_set_pos(help2, 12, 21);
+
+        lv_obj_t *footer = _mkCard(scr, SETTINGS_FOOTER_X, SETTINGS_FOOTER_Y, SETTINGS_FOOTER_W, SETTINGS_FOOTER_H, 0x0A0A0A, 0x050505, C_BORDER, 12);
+        lv_obj_t *back = _mkCard(footer, 8, 3, 290, 28, 0x10131A, 0x10131A, C_BORDER, 14);
+        lv_obj_t *backLabel = _mkLabel(back, "BACK TO TICKER", C_TEXT2, &lv_font_montserrat_12);
+        lv_obj_align(backLabel, LV_ALIGN_CENTER, 0, 0);
 
         _lvFlush();
     }
 
     TouchAction _hitTestSettingsAction(int sx, int sy)
     {
-        if (_settingsPage == SETTINGS_HOME)
-        {
-            if (_pointInRect(sx, sy, 15, 201, 88, 28))
-                return TouchAction(TOUCH_PREV, -1);
-
-            if (_pointInRect(sx, sy, 17, 124, SETTINGS_HOME_CARD_W, SETTINGS_HOME_CARD_H))
-            {
-                _settingsPage = SETTINGS_COINS;
-                _settingsScrollY = 0;
-                _renderSettingsScreen();
-                return TouchAction();
-            }
-
-            if (_pointInRect(sx, sy, 163, 124, SETTINGS_HOME_CARD_W, SETTINGS_HOME_CARD_H))
-            {
-                _settingsPage = SETTINGS_DEVICE;
-                _settingsScrollY = 0;
-                _renderSettingsScreen();
-                return TouchAction();
-            }
-
-            return TouchAction();
-        }
-
-        if (_pointInRect(sx, sy, 15, 201, 88, 28))
-        {
-            _settingsPage = SETTINGS_HOME;
-            _settingsScrollY = 0;
-            _renderSettingsScreen();
-            return TouchAction();
-        }
-
-        if (_pointInRect(sx, sy, 185, 201, 120, 28))
-            return TouchAction(TOUCH_APPLY_SETTINGS, -1);
-
-        if (!_pointInRect(sx, sy, SETTINGS_VIEWPORT_X, SETTINGS_VIEWPORT_Y, SETTINGS_VIEWPORT_W, SETTINGS_VIEWPORT_H))
-            return TouchAction();
-
-        int contentX = sx - SETTINGS_VIEWPORT_X;
-        int contentY = sy - SETTINGS_VIEWPORT_Y + _settingsScrollY;
-
-        if (_pointInRect(contentX, contentY, 20, SETTINGS_RANDOM_Y + 22, 48, 40))
-            return TouchAction(TOUCH_RANDOM_COUNT_DEC, -1);
-
-        if (_pointInRect(contentX, contentY, 238, SETTINGS_RANDOM_Y + 22, 48, 40))
-            return TouchAction(TOUCH_RANDOM_COUNT_INC, -1);
-
-        if (_settingsPage == SETTINGS_COINS)
-        {
-            for (int i = 0; i < _settingsData.optionCount; i++)
-            {
-                if (_pointInRect(contentX, contentY, SETTINGS_CONTENT_X, _settingsOptionTop(i), SETTINGS_CONTENT_W, SETTINGS_OPTION_H))
-                    return TouchAction(TOUCH_TOGGLE_SETTINGS_COIN, i);
-            }
-            return TouchAction();
-        }
-
-        if (_pointInRect(contentX, contentY, 184, SETTINGS_RANDOM_Y + 9, 42, 34))
-            return TouchAction(TOUCH_PRICE_REFRESH_DEC, -1);
-
-        if (_pointInRect(contentX, contentY, 252, SETTINGS_RANDOM_Y + 9, 42, 34))
-            return TouchAction(TOUCH_PRICE_REFRESH_INC, -1);
-
-        if (_pointInRect(contentX, contentY, 184, SETTINGS_RANDOM_Y + SETTINGS_STEPPER_H + 17, 42, 34))
-            return TouchAction(TOUCH_ROTATE_DEC, -1);
-
-        if (_pointInRect(contentX, contentY, 252, SETTINGS_RANDOM_Y + SETTINGS_STEPPER_H + 17, 42, 34))
-            return TouchAction(TOUCH_ROTATE_INC, -1);
-
-        if (_pointInRect(contentX, contentY, SETTINGS_CONTENT_X, SETTINGS_RANDOM_Y + (SETTINGS_STEPPER_H + 8) * 2, SETTINGS_CONTENT_W, SETTINGS_WIFI_H))
-            return TouchAction(TOUCH_OPEN_WIFI_PORTAL, -1);
-
+        if (_pointInRect(sx, sy, SETTINGS_FOOTER_X, SETTINGS_FOOTER_Y, SETTINGS_FOOTER_W, SETTINGS_FOOTER_H))
+            return TouchAction(TOUCH_PREV, -1);
         return TouchAction();
     }
 
@@ -772,33 +707,11 @@ private:
         {
             _settingsTouchActive = true;
             _settingsTouchDragging = false;
-            _settingsTouchCanScroll = _settingsPage != SETTINGS_HOME
-                && _pointInRect(sx, sy, SETTINGS_VIEWPORT_X, SETTINGS_VIEWPORT_Y, SETTINGS_VIEWPORT_W, SETTINGS_VIEWPORT_H);
+            _settingsTouchCanScroll = false;
             _settingsTouchStartX = sx;
             _settingsTouchStartY = sy;
             _settingsTouchLastX = sx;
             _settingsTouchLastY = sy;
-            return TouchAction();
-        }
-
-        int totalDx = sx - _settingsTouchStartX;
-        int totalDy = sy - _settingsTouchStartY;
-
-        if (_settingsTouchCanScroll
-            && (_settingsTouchDragging || (abs(totalDy) >= SETTINGS_SCROLL_THRESHOLD && abs(totalDy) > abs(totalDx))))
-        {
-            _settingsTouchDragging = true;
-
-            int scrollStep = _settingsTouchLastY - sy;
-            _settingsTouchLastX = sx;
-            _settingsTouchLastY = sy;
-
-            if (scrollStep != 0)
-            {
-                _settingsScrollY += scrollStep;
-                _clampSettingsScroll();
-                _renderSettingsScreen();
-            }
             return TouchAction();
         }
 

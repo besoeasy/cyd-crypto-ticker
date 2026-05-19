@@ -52,6 +52,13 @@ struct SettingsViewData
   int maxRandomCoinCount = 0;
   int priceRefreshSeconds = 0;
   int rotateSeconds = 0;
+  String connectedSsid;
+  String connectedIp;
+  String portalSsid;
+  String portalPassword;
+  String portalIp;
+  bool wifiConnected = false;
+  bool portalActive = false;
   bool dirty = false;
 };
 
