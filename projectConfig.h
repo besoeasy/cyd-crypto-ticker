@@ -6,7 +6,7 @@
 #define CONFIG_CRYPTO_IDS "cryptoIds"
 #define DEFAULT_CORE_CRYPTO_IDS "bitcoin,ethereum,solana"
 #define DEFAULT_CRYPTO_IDS DEFAULT_CORE_CRYPTO_IDS
-#define LEGACY_DEFAULT_CRYPTO_IDS "bitcoin,ethereum,solana,the-open-network"
+#define LEGACY_DEFAULT_CRYPTO_IDS "bitcoin,ethereum"
 
 class ProjectConfig
 {
