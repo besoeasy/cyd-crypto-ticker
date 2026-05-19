@@ -4,20 +4,28 @@
 #define PROJECT_CONFIG_JSON "/project_config.json"
 
 #define CONFIG_CRYPTO_IDS "cryptoIds"
+#define CONFIG_RANDOM_COIN_COUNT "randomCoinCount"
 #define DEFAULT_CORE_CRYPTO_IDS "bitcoin,ethereum,solana"
 #define DEFAULT_CRYPTO_IDS DEFAULT_CORE_CRYPTO_IDS
 #define LEGACY_DEFAULT_CRYPTO_IDS "bitcoin,ethereum"
+#define DEFAULT_RANDOM_COIN_COUNT 3
 
 class ProjectConfig
 {
 public:
   String cryptoIds = DEFAULT_CRYPTO_IDS;
+  uint8_t randomCoinCount = DEFAULT_RANDOM_COIN_COUNT;
 
   bool usesDefaultCryptoIds() const
   {
     String configured = normalizeCryptoIdsCsv(cryptoIds);
     return configured == normalizeCryptoIdsCsv(String(DEFAULT_CRYPTO_IDS))
         || configured == normalizeCryptoIdsCsv(String(LEGACY_DEFAULT_CRYPTO_IDS));
+  }
+
+  bool usesDefaultCoinSettings() const
+  {
+    return usesDefaultCryptoIds() && randomCoinCount == DEFAULT_RANDOM_COIN_COUNT;
   }
 
   bool fetchConfigFile()
@@ -48,6 +56,11 @@ public:
     if (json.containsKey(CONFIG_CRYPTO_IDS))
       cryptoIds = json[CONFIG_CRYPTO_IDS].as<String>();
 
+    if (json.containsKey(CONFIG_RANDOM_COIN_COUNT))
+      randomCoinCount = clampRandomCoinCount(json[CONFIG_RANDOM_COIN_COUNT].as<int>());
+    else
+      randomCoinCount = usesDefaultCryptoIds() ? DEFAULT_RANDOM_COIN_COUNT : 0;
+
     return true;
   }
 
@@ -55,6 +68,7 @@ public:
   {
     StaticJsonDocument<512> json;
     json[CONFIG_CRYPTO_IDS] = cryptoIds;
+    json[CONFIG_RANDOM_COIN_COUNT] = randomCoinCount;
 
     File configFile = SPIFFS.open(PROJECT_CONFIG_JSON, "w");
     if (!configFile)
@@ -73,6 +87,13 @@ public:
   }
 
 private:
+  static uint8_t clampRandomCoinCount(int value)
+  {
+    if (value < 0) return 0;
+    if (value > 8) return 8;
+    return (uint8_t)value;
+  }
+
   static String normalizeCryptoIdsCsv(const String &value)
   {
     String normalized;

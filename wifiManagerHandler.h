@@ -28,7 +28,7 @@ void setupWiFiManager(bool forceConfig, ProjectConfig &config, ProjectDisplay *t
 
   WiFiManagerParameter cryptoIdsParam(
       CONFIG_CRYPTO_IDS,
-      "Coin IDs (comma-separated CoinGecko IDs)",
+      "Advanced coin IDs override (optional CSV)",
       config.cryptoIds.c_str(),
       160);
 

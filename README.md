@@ -2,7 +2,7 @@
 
 A crypto price tracker for the **Cheap Yellow Display (CYD)** — an ESP32 with a built-in 2.8" ILI9341 TFT touchscreen.
 
-Fetches live prices from CoinGecko and cycles through your configured coins on-screen. Supports up to 8 coins, configurable via a captive-portal WiFi setup page.
+Fetches live prices from CoinGecko and cycles through your configured coins on-screen. Supports up to 8 total slots, with coin mix configurable on-device from a Settings panel.
 
 ## Hardware
 
@@ -33,8 +33,9 @@ pio run -e cyd2usb --target upload
 ## First Boot
 
 1. The device creates a WiFi access point — connect to it.
-2. Enter your WiFi credentials and the CoinGecko coin IDs you want to track (comma-separated, e.g. `bitcoin,ethereum,solana`).
+2. Enter your WiFi credentials. The portal still accepts an optional advanced CoinGecko ID CSV override if you want it.
 3. Save and the device will reboot, connect to WiFi, and start displaying prices.
+4. Swipe through the coin tabs to the `SETTINGS` tab to pick the base coins and how many random coins to add.
 
 > Double-press the reset button at any time to re-open the configuration portal.
 
@@ -44,7 +45,14 @@ pio run -e cyd2usb --target upload
 bitcoin, ethereum, solana
 ```
 
-If you keep the default coin IDs unchanged, startup adds:
+By default the firmware uses:
+
+- 3 base coins: bitcoin, ethereum, solana
+- 3 extra random coins
+
+The Settings tab lets you choose the base mix from the built-in popular coin list and set how many random coins to add. Random picks are filled from CoinGecko trending and high-volume markets.
+
+If you keep the default coin settings unchanged, startup adds:
 
 - 1 random trending coin
 - 2 random coins picked from CoinGecko's top 100 by trading volume

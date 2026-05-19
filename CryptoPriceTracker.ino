@@ -19,14 +19,34 @@
 #define DRD_ADDRESS 0
 
 #define MAX_COINS 8
+#define SETTINGS_COIN_OPTION_COUNT 8
 
 ProjectConfig projectConfig;
 CheapYellowDisplay cyd;
 ProjectDisplay *projectDisplay = &cyd;
 
+static const SettingsCoinOption SETTINGS_COIN_OPTIONS[SETTINGS_COIN_OPTION_COUNT] = {
+    {"bitcoin", "BTC"},
+    {"ethereum", "ETH"},
+    {"solana", "SOL"},
+    {"binancecoin", "BNB"},
+    {"ripple", "XRP"},
+    {"dogecoin", "DOGE"},
+    {"cardano", "ADA"},
+    {"chainlink", "LINK"}
+};
+
 CryptoData coins[MAX_COINS];
 int coinCount   = 0;
 int currentCoin = 0;
+String activeCoinIds;
+
+String settingsDraftCoinIds[MAX_COINS];
+int settingsDraftCoinCount = 0;
+bool settingsCoinSelected[SETTINGS_COIN_OPTION_COUNT] = {false};
+uint8_t settingsDraftRandomCoinCount = DEFAULT_RANDOM_COIN_COUNT;
+bool settingsDirty = false;
+bool settingsScreenActive = false;
 
 unsigned long lastPriceFetch = 0;
 unsigned long lastAutoRotate = 0;
@@ -306,30 +326,147 @@ static int appendRandomHighVolumeCoins(String *ids, int &count, int maxCount, in
     return added;
 }
 
-static void resolveDynamicDefaultCoinIds()
+static int maxBaseCoinCountForRandomCount(int randomCoinCount)
 {
-    if (!projectConfig.usesDefaultCryptoIds()) return;
+    int maxBase = MAX_COINS - randomCoinCount;
+    return maxBase > 0 ? maxBase : 0;
+}
 
+static int maxRandomCoinCountForBaseCount(int baseCoinCount)
+{
+    int maxRandom = MAX_COINS - baseCoinCount;
+    return maxRandom > 0 ? maxRandom : 0;
+}
+
+static int findSettingsOptionIndex(const String &id)
+{
+    for (int i = 0; i < SETTINGS_COIN_OPTION_COUNT; i++)
+    {
+        if (id == SETTINGS_COIN_OPTIONS[i].id) return i;
+    }
+    return -1;
+}
+
+static void syncSettingsSelectionFlags()
+{
+    for (int i = 0; i < SETTINGS_COIN_OPTION_COUNT; i++)
+        settingsCoinSelected[i] = false;
+
+    for (int i = 0; i < settingsDraftCoinCount; i++)
+    {
+        int optionIndex = findSettingsOptionIndex(settingsDraftCoinIds[i]);
+        if (optionIndex >= 0) settingsCoinSelected[optionIndex] = true;
+    }
+}
+
+static int countHiddenSettingsCoins()
+{
+    int hiddenCount = 0;
+    for (int i = 0; i < settingsDraftCoinCount; i++)
+    {
+        if (findSettingsOptionIndex(settingsDraftCoinIds[i]) < 0) hiddenCount++;
+    }
+    return hiddenCount;
+}
+
+static void loadSettingsDraftFromConfig()
+{
+    settingsDraftCoinCount = 0;
+    appendCoinIdsFromCsv(projectConfig.cryptoIds, settingsDraftCoinIds, settingsDraftCoinCount, MAX_COINS);
+    settingsDraftRandomCoinCount = projectConfig.randomCoinCount;
+
+    int maxRandom = maxRandomCoinCountForBaseCount(settingsDraftCoinCount);
+    if (settingsDraftRandomCoinCount > maxRandom)
+        settingsDraftRandomCoinCount = maxRandom;
+
+    syncSettingsSelectionFlags();
+    settingsDirty = false;
+}
+
+static void removeSettingsDraftCoinId(const String &id)
+{
+    for (int i = 0; i < settingsDraftCoinCount; i++)
+    {
+        if (settingsDraftCoinIds[i] != id) continue;
+
+        for (int j = i; j < settingsDraftCoinCount - 1; j++)
+            settingsDraftCoinIds[j] = settingsDraftCoinIds[j + 1];
+
+        settingsDraftCoinIds[settingsDraftCoinCount - 1] = "";
+        settingsDraftCoinCount--;
+        return;
+    }
+}
+
+static bool toggleSettingsCoinSelection(int optionIndex)
+{
+    if (optionIndex < 0 || optionIndex >= SETTINGS_COIN_OPTION_COUNT) return false;
+
+    String id = SETTINGS_COIN_OPTIONS[optionIndex].id;
+    if (containsCoinId(settingsDraftCoinIds, settingsDraftCoinCount, id))
+    {
+        removeSettingsDraftCoinId(id);
+        syncSettingsSelectionFlags();
+        settingsDirty = true;
+        return true;
+    }
+
+    if (settingsDraftCoinCount >= maxBaseCoinCountForRandomCount(settingsDraftRandomCoinCount))
+        return false;
+
+    appendUniqueCoinId(settingsDraftCoinIds, settingsDraftCoinCount, MAX_COINS, id);
+    syncSettingsSelectionFlags();
+    settingsDirty = true;
+    return true;
+}
+
+static bool adjustSettingsRandomCoinCount(int delta)
+{
+    int nextCount = (int)settingsDraftRandomCoinCount + delta;
+    int maxRandom = maxRandomCoinCountForBaseCount(settingsDraftCoinCount);
+    if (nextCount < 0 || nextCount > maxRandom) return false;
+
+    settingsDraftRandomCoinCount = (uint8_t)nextCount;
+    settingsDirty = true;
+    return true;
+}
+
+static String buildResolvedCoinIds()
+{
     String resolvedIds[MAX_COINS];
     int resolvedCount = 0;
-    appendCoinIdsFromCsv(String(DEFAULT_CORE_CRYPTO_IDS), resolvedIds, resolvedCount, MAX_COINS);
+    appendCoinIdsFromCsv(projectConfig.cryptoIds, resolvedIds, resolvedCount, MAX_COINS);
 
-    appendRandomTrendingCoin(resolvedIds, resolvedCount, MAX_COINS);
-    appendRandomHighVolumeCoins(resolvedIds, resolvedCount, MAX_COINS, 2);
+    int desiredRandom = projectConfig.randomCoinCount;
+    int remainingSlots = MAX_COINS - resolvedCount;
+    if (desiredRandom > remainingSlots) desiredRandom = remainingSlots;
+
+    int randomAdded = 0;
+    if (desiredRandom > 0)
+    {
+        if (appendRandomTrendingCoin(resolvedIds, resolvedCount, MAX_COINS))
+            randomAdded++;
+
+        if (desiredRandom > randomAdded)
+            appendRandomHighVolumeCoins(resolvedIds, resolvedCount, MAX_COINS, desiredRandom - randomAdded);
+    }
+
+    if (resolvedCount == 0 && desiredRandom == 0)
+        appendCoinIdsFromCsv(String(DEFAULT_CORE_CRYPTO_IDS), resolvedIds, resolvedCount, MAX_COINS);
 
     String dynamicIds = joinCoinIds(resolvedIds, resolvedCount);
-    if (dynamicIds.length() == 0) return;
-
-    projectConfig.cryptoIds = dynamicIds;
-    Serial.print("Dynamic default coins: ");
-    Serial.println(projectConfig.cryptoIds);
+    if (dynamicIds.length() > 0)
+    {
+        Serial.print("Resolved coin list: ");
+        Serial.println(dynamicIds);
+    }
+    return dynamicIds;
 }
 
 // Split a comma-separated string into the coins[] array
-void initCoins()
+void initCoins(const String &src)
 {
     coinCount = 0;
-    const String &src = projectConfig.cryptoIds;
     int start = 0;
     for (int i = 0; i <= (int)src.length() && coinCount < MAX_COINS; i++)
     {
@@ -345,6 +482,64 @@ void initCoins()
             start = i + 1;
         }
     }
+}
+
+static void refreshResolvedCoins()
+{
+    normalizeConfiguredCoinIds();
+    activeCoinIds = buildResolvedCoinIds();
+    initCoins(activeCoinIds);
+
+    if (coinCount == 0)
+        currentCoin = 0;
+    else if (currentCoin >= coinCount)
+        currentCoin = coinCount - 1;
+}
+
+static void renderCurrentScreen()
+{
+    if (settingsScreenActive)
+    {
+        SettingsViewData data;
+        data.options = SETTINGS_COIN_OPTIONS;
+        data.selected = settingsCoinSelected;
+        data.optionCount = SETTINGS_COIN_OPTION_COUNT;
+        data.selectedCount = settingsDraftCoinCount;
+        data.hiddenSelectedCount = countHiddenSettingsCoins();
+        data.maxBaseCoinCount = maxBaseCoinCountForRandomCount(settingsDraftRandomCoinCount);
+        data.randomCoinCount = settingsDraftRandomCoinCount;
+        data.maxRandomCoinCount = maxRandomCoinCountForBaseCount(settingsDraftCoinCount);
+        data.dirty = settingsDirty;
+        projectDisplay->drawSettingsScreen(data);
+        return;
+    }
+
+    if (coinCount == 0)
+    {
+        projectDisplay->showMessage("No coins configured");
+        return;
+    }
+
+    projectDisplay->drawCoinScreen(coins, coinCount, currentCoin);
+}
+
+static bool applySettingsDraft()
+{
+    if (settingsDraftCoinCount == 0 && settingsDraftRandomCoinCount == 0)
+        return false;
+
+    projectConfig.cryptoIds = joinCoinIds(settingsDraftCoinIds, settingsDraftCoinCount);
+    projectConfig.randomCoinCount = settingsDraftRandomCoinCount;
+
+    if (!projectConfig.saveConfigFile())
+    {
+        Serial.println("Failed to save settings config");
+        return false;
+    }
+
+    refreshResolvedCoins();
+    loadSettingsDraftFromConfig();
+    return true;
 }
 
 void fetchPrices(bool allowDefaultFallback = true)
@@ -512,11 +707,13 @@ void fetchPrices(bool allowDefaultFallback = true)
             return;
         }
 
-        if (allowDefaultFallback && !projectConfig.usesDefaultCryptoIds())
+        if (allowDefaultFallback && !projectConfig.usesDefaultCoinSettings())
         {
-            Serial.println("Falling back to default coin IDs");
+            Serial.println("Falling back to default coin settings");
             projectConfig.cryptoIds = String(DEFAULT_CORE_CRYPTO_IDS);
-            initCoins();
+            projectConfig.randomCoinCount = DEFAULT_RANDOM_COIN_COUNT;
+            refreshResolvedCoins();
+            loadSettingsDraftFromConfig();
             fetchPrices(false);
         }
     }
@@ -560,16 +757,15 @@ void baseProjectSetup()
         while (1) yield();
     }
 
-    resolveDynamicDefaultCoinIds();
-    normalizeConfiguredCoinIds();
-    initCoins();
+    loadSettingsDraftFromConfig();
+    refreshResolvedCoins();
 
     projectDisplay->showMessage("Fetching prices...");
     fetchPrices();
     lastPriceFetch = millis();
     lastAutoRotate = millis();
 
-    projectDisplay->drawCoinScreen(coins, coinCount, currentCoin);
+    renderCurrentScreen();
 }
 
 void baseProjectLoop()
@@ -580,33 +776,85 @@ void baseProjectLoop()
 
     // Touch interaction
     TouchAction action = projectDisplay->getTouchAction();
-    if (action == TOUCH_PREV)
+    if (action.type == TOUCH_PREV)
     {
-        currentCoin = (currentCoin - 1 + coinCount) % coinCount;
+        if (settingsScreenActive)
+        {
+            if (coinCount > 0)
+            {
+                settingsScreenActive = false;
+                currentCoin = coinCount - 1;
+            }
+        }
+        else if (coinCount > 0)
+        {
+            if (currentCoin == 0)
+                settingsScreenActive = true;
+            else
+                currentCoin--;
+        }
         lastAutoRotate = now;
-        projectDisplay->drawCoinScreen(coins, coinCount, currentCoin);
+        renderCurrentScreen();
     }
-    else if (action == TOUCH_NEXT)
+    else if (action.type == TOUCH_NEXT)
     {
-        currentCoin = (currentCoin + 1) % coinCount;
+        if (settingsScreenActive)
+        {
+            if (coinCount > 0)
+            {
+                settingsScreenActive = false;
+                currentCoin = 0;
+            }
+        }
+        else if (coinCount > 0)
+        {
+            if (currentCoin >= coinCount - 1)
+                settingsScreenActive = true;
+            else
+                currentCoin++;
+        }
         lastAutoRotate = now;
-        projectDisplay->drawCoinScreen(coins, coinCount, currentCoin);
+        renderCurrentScreen();
     }
-    else if (action == TOUCH_REFRESH)
+    else if (action.type == TOUCH_REFRESH)
     {
         projectDisplay->showMessage("Refreshing...");
         fetchPrices();
         lastPriceFetch = now;
         lastAutoRotate = now;
-        projectDisplay->drawCoinScreen(coins, coinCount, currentCoin);
+        renderCurrentScreen();
+    }
+    else if (action.type == TOUCH_RANDOM_COUNT_DEC)
+    {
+        if (adjustSettingsRandomCoinCount(-1)) renderCurrentScreen();
+    }
+    else if (action.type == TOUCH_RANDOM_COUNT_INC)
+    {
+        if (adjustSettingsRandomCoinCount(1)) renderCurrentScreen();
+    }
+    else if (action.type == TOUCH_TOGGLE_SETTINGS_COIN)
+    {
+        if (toggleSettingsCoinSelection(action.value)) renderCurrentScreen();
+    }
+    else if (action.type == TOUCH_APPLY_SETTINGS && settingsDirty)
+    {
+        projectDisplay->showMessage("Applying...");
+        if (applySettingsDraft())
+        {
+            projectDisplay->showMessage("Refreshing...");
+            fetchPrices();
+            lastPriceFetch = now;
+            lastAutoRotate = now;
+        }
+        renderCurrentScreen();
     }
 
     // Auto-rotate every ROTATE_INTERVAL
-    if (now - lastAutoRotate >= ROTATE_INTERVAL)
+    if (!settingsScreenActive && coinCount > 1 && now - lastAutoRotate >= ROTATE_INTERVAL)
     {
         currentCoin = (currentCoin + 1) % coinCount;
         lastAutoRotate = now;
-        projectDisplay->drawCoinScreen(coins, coinCount, currentCoin);
+        renderCurrentScreen();
     }
 
     // Refresh prices every PRICE_INTERVAL
@@ -614,7 +862,7 @@ void baseProjectLoop()
     {
         fetchPrices();
         lastPriceFetch = now;
-        projectDisplay->drawCoinScreen(coins, coinCount, currentCoin);
+        renderCurrentScreen();
     }
 
     if (WiFi.status() != WL_CONNECTED)

@@ -34,12 +34,46 @@ struct CryptoData
   CoinFeedStatus feedStatus = COIN_FEED_NO_DATA;
 };
 
-enum TouchAction
+struct SettingsCoinOption
+{
+  const char *id;
+  const char *label;
+};
+
+struct SettingsViewData
+{
+  const SettingsCoinOption *options = nullptr;
+  const bool *selected = nullptr;
+  int optionCount = 0;
+  int selectedCount = 0;
+  int hiddenSelectedCount = 0;
+  int maxBaseCoinCount = 0;
+  int randomCoinCount = 0;
+  int maxRandomCoinCount = 0;
+  bool dirty = false;
+};
+
+enum TouchActionType
 {
   TOUCH_NONE,
   TOUCH_PREV,
   TOUCH_NEXT,
-  TOUCH_REFRESH
+  TOUCH_REFRESH,
+  TOUCH_OPEN_SETTINGS,
+  TOUCH_APPLY_SETTINGS,
+  TOUCH_RANDOM_COUNT_DEC,
+  TOUCH_RANDOM_COUNT_INC,
+  TOUCH_TOGGLE_SETTINGS_COIN
+};
+
+struct TouchAction
+{
+  TouchAction() = default;
+  TouchAction(TouchActionType actionType, int actionValue)
+      : type(actionType), value(actionValue) {}
+
+  TouchActionType type = TOUCH_NONE;
+  int value = -1;
 };
 
 class ProjectDisplay
@@ -48,8 +82,9 @@ public:
   virtual void displaySetup() = 0;
   virtual void drawWifiManagerMessage(WiFiManager *myWiFiManager) = 0;
   virtual void drawCoinScreen(const CryptoData *coins, int count, int index) = 0;
+  virtual void drawSettingsScreen(const SettingsViewData &data) = 0;
   virtual void showMessage(const String &msg) = 0;
-  virtual TouchAction getTouchAction() { return TOUCH_NONE; }
+  virtual TouchAction getTouchAction() { return TouchAction(); }
 
   void setWidth(int w)  { screenWidth = w; screenCenterX = w / 2; }
   void setHeight(int h) { screenHeight = h; }
