@@ -56,3 +56,38 @@ Up to **8 coins** are supported. Prices refresh every 60 seconds and rotate ever
 ```bash
 pio device monitor
 ```
+
+## Web Flasher
+
+The repo now includes a browser-based installer built with ESP Web Tools. It publishes two firmware targets:
+
+- `cyd` for the standard Cheap Yellow Display profile
+- `cyd2usb` for boards that need the alternate TFT inversion setting
+
+Generate the local site bundle with:
+
+```bash
+chmod +x scripts/build_web_flasher_site.sh
+./scripts/build_web_flasher_site.sh
+```
+
+That writes a deployable site to `.web-flasher/site/` with merged ESP32 binaries and manifests for both board variants.
+
+To preview locally, serve that folder from `localhost`, for example:
+
+```bash
+cd .web-flasher/site
+python3 -m http.server 8000
+```
+
+Then open `http://localhost:8000` in Chrome or Edge.
+
+## GitHub Pages Deployment
+
+The GitHub Actions workflow in `.github/workflows/web-flasher.yml` builds the firmware and publishes the installer to GitHub Pages.
+
+1. Enable GitHub Pages for the repository and choose `GitHub Actions` as the source.
+2. Push to the default branch, or run the workflow manually.
+3. Open the published Pages URL to flash the board from the browser.
+
+ESP Web Tools requires an HTTPS page or `localhost`, plus a Chromium browser with Web Serial support.
