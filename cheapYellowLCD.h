@@ -119,6 +119,7 @@ public:
         if (count == 0) { showMessage("No coins configured"); return; }
 
         _screenMode = SCREEN_COIN;
+        _resetSettingsTouch();
 
         const CryptoData &coin = coins[index];
         CoinTheme th = _getCoinTheme(coin.id);
@@ -150,7 +151,7 @@ public:
         lv_obj_set_style_pad_all(cont,      0,             0);
         lv_obj_clear_flag(cont, LV_OBJ_FLAG_SCROLLABLE);
 
-        _drawHeader(cont, coin, th, count + 1, index, C);
+        _drawHeader(cont, coin, th, count, index, C);
         _divider(cont, 54);
 
         if (coin.valid)
@@ -170,82 +171,21 @@ public:
 
     void drawSettingsScreen(const SettingsViewData &data) override
     {
+        bool reopening = _screenMode != SCREEN_SETTINGS;
+        _settingsData = data;
+        _hasSettingsData = true;
+        if (reopening) _settingsScrollY = 0;
+
         _screenMode = SCREEN_SETTINGS;
         _lastCoinIndex = -1;
-
-        lv_obj_t *scr = lv_scr_act();
-        lv_obj_clean(scr);
-        _styleScreen(scr);
-        _mkBar(scr, 0, 0, 320, 1, C_BLUE);
-
-        lv_obj_t *hero = _mkCard(scr, 7, 8, 306, 48, 0x0A0A0A, 0x050505, C_BORDER, 8);
-        _mkPill(hero, 10, 10, 78, 20, 0x0A1024, C_BORDER, "SETTINGS", C_BLUE, &lv_font_montserrat_12);
-        lv_obj_t *title = _mkLabel(hero, "Coin mix", C_TEXT1, &lv_font_montserrat_16);
-        lv_obj_set_pos(title, 10, 28);
-        lv_obj_t *sub = _mkLabel(hero, "Pick base coins and extra randoms", C_TEXT3, &lv_font_montserrat_12);
-        lv_obj_set_pos(sub, 108, 14);
-
-        lv_obj_t *randomCard = _mkCard(scr, 7, 64, 306, 40, 0x14173A, 0x0B0E21, C_BORDER, 12);
-        lv_obj_t *randomLabel = _mkLabel(randomCard, "Random coins", C_TEXT2, &lv_font_montserrat_12);
-        lv_obj_set_pos(randomLabel, 14, 7);
-
-        lv_obj_t *minus = _mkCard(randomCard, 12, 8, 36, 24, 0x10131A, 0x10131A, C_BORDER, 12);
-        lv_obj_t *minusLabel = _mkLabel(minus, "-", C_TEXT1, &lv_font_montserrat_16);
-        lv_obj_align(minusLabel, LV_ALIGN_CENTER, 0, -1);
-
-        lv_obj_t *plus = _mkCard(randomCard, 258, 8, 36, 24, 0x10131A, 0x10131A, C_BORDER, 12);
-        lv_obj_t *plusLabel = _mkLabel(plus, "+", C_TEXT1, &lv_font_montserrat_16);
-        lv_obj_align(plusLabel, LV_ALIGN_CENTER, 0, -1);
-
-        String randomValue = String(data.randomCoinCount) + " / " + String(data.maxRandomCoinCount);
-        lv_obj_t *randomCount = _mkLabel(randomCard, randomValue.c_str(), C_TEXT1, &lv_font_montserrat_16);
-        lv_obj_align(randomCount, LV_ALIGN_CENTER, 0, 0);
-
-        String baseSummary = String(data.selectedCount) + " base / " + String(data.maxBaseCoinCount) + " slots";
-        lv_obj_t *baseCount = _mkLabel(randomCard, baseSummary.c_str(), C_TEXT3, &lv_font_montserrat_12);
-        lv_obj_set_pos(baseCount, 108, 22);
-
-        lv_obj_t *gridCard = _mkCard(scr, 7, 112, 306, 86, 0x14173A, 0x0B0E21, C_BORDER, 12);
-        for (int i = 0; i < data.optionCount; i++)
-        {
-            int col = i % 4;
-            int row = i / 4;
-            int x = 10 + col * 73;
-            int y = 11 + row * 34;
-            CoinTheme theme = _getCoinTheme(data.options[i].id);
-            bool enabled = data.selected[i];
-            uint32_t bg = enabled ? _dimBg(theme.hex) : 0x10131A;
-            uint32_t border = enabled ? theme.hex : C_BORDER;
-            uint32_t color = enabled ? C_TEXT1 : C_TEXT3;
-
-            lv_obj_t *pill = _mkCard(gridCard, x, y, 66, 24, bg, bg, border, 12);
-            lv_obj_t *label = _mkLabel(pill, data.options[i].label, color, &lv_font_montserrat_12);
-            lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
-        }
-
-        lv_obj_t *footer = _mkCard(scr, 7, 206, 306, 26, 0x0A0A0A, 0x050505, C_BORDER, 12);
-        _mkPill(footer, 8, 3, 70, 20, 0x10131A, C_BORDER, "PREV", C_TEXT3, &lv_font_montserrat_12);
-        _mkPill(footer, 228, 3, 70, 20, 0x10131A, C_BORDER, "NEXT", C_TEXT3, &lv_font_montserrat_12);
-
-        uint32_t applyBorder = data.dirty ? C_BLUE : C_BORDER;
-        uint32_t applyBg = data.dirty ? 0x0A1024 : 0x10131A;
-        lv_obj_t *apply = _mkCard(footer, 103, 3, 100, 20, applyBg, applyBg, applyBorder, 10);
-        lv_obj_t *applyLabel = _mkLabel(apply, data.dirty ? "APPLY" : "SAVED", data.dirty ? C_BLUE : C_TEXT3, &lv_font_montserrat_12);
-        lv_obj_align(applyLabel, LV_ALIGN_CENTER, 0, 0);
-
-        if (data.hiddenSelectedCount > 0)
-        {
-            String note = "+" + String(data.hiddenSelectedCount) + " custom IDs kept from portal";
-            lv_obj_t *noteLabel = _mkLabel(scr, note.c_str(), C_TEXT3, &lv_font_montserrat_12);
-            lv_obj_set_pos(noteLabel, 13, 196);
-        }
-
-        _lvFlush();
+        _clampSettingsScroll();
+        _renderSettingsScreen();
     }
 
     void showMessage(const String &msg) override
     {
         _screenMode = SCREEN_MESSAGE;
+        _resetSettingsTouch();
         lv_obj_t *scr = lv_scr_act();
         lv_obj_clean(scr);
         _styleScreen(scr);
@@ -276,6 +216,9 @@ public:
     {
         lv_timer_handler();
 
+        if (_screenMode == SCREEN_SETTINGS)
+            return _getSettingsTouchAction();
+
         bool nowTouched = ts.touched();
         if (!nowTouched) { _wasTouched = false; return TouchAction(); }
         if (_wasTouched)  return TouchAction();
@@ -283,17 +226,13 @@ public:
         _wasTouched = true;
         TS_Point p  = ts.getPoint();
         int sx      = _mapTouchAxis(p.x, TOUCH_X_MIN, TOUCH_X_MAX, screenWidth);
-        int sy      = _mapTouchAxis(p.y, TOUCH_Y_MIN, TOUCH_Y_MAX, screenHeight);
-
-        if (_screenMode == SCREEN_SETTINGS)
-            return _getSettingsTouchAction(sx, sy);
 
         if (_screenMode != SCREEN_COIN)
             return TouchAction();
 
         if (sx < screenWidth / 3)        return {TOUCH_PREV, -1};
         if (sx > (screenWidth * 2) / 3)  return {TOUCH_NEXT, -1};
-        return {TOUCH_REFRESH, -1};
+        return {TOUCH_OPEN_SETTINGS, -1};
     }
 
 private:
@@ -308,6 +247,43 @@ private:
     bool _wasTouched    = false;
     int  _lastCoinIndex = -1;   // -1 = no previous coin rendered yet
     ScreenMode _screenMode = SCREEN_MESSAGE;
+    SettingsViewData _settingsData;
+    bool _hasSettingsData = false;
+    int _settingsScrollY = 0;
+    bool _settingsTouchActive = false;
+    bool _settingsTouchDragging = false;
+    bool _settingsTouchCanScroll = false;
+    int _settingsTouchStartX = 0;
+    int _settingsTouchStartY = 0;
+    int _settingsTouchLastX = 0;
+    int _settingsTouchLastY = 0;
+
+    static constexpr int SETTINGS_HEADER_X = 7;
+    static constexpr int SETTINGS_HEADER_Y = 8;
+    static constexpr int SETTINGS_HEADER_W = 306;
+    static constexpr int SETTINGS_HEADER_H = 46;
+    static constexpr int SETTINGS_VIEWPORT_X = 7;
+    static constexpr int SETTINGS_VIEWPORT_Y = 60;
+    static constexpr int SETTINGS_VIEWPORT_W = 306;
+    static constexpr int SETTINGS_VIEWPORT_H = 132;
+    static constexpr int SETTINGS_FOOTER_X = 7;
+    static constexpr int SETTINGS_FOOTER_Y = 198;
+    static constexpr int SETTINGS_FOOTER_W = 306;
+    static constexpr int SETTINGS_FOOTER_H = 34;
+    static constexpr int SETTINGS_CONTENT_X = 8;
+    static constexpr int SETTINGS_CONTENT_W = 290;
+    static constexpr int SETTINGS_SUMMARY_Y = 8;
+    static constexpr int SETTINGS_SUMMARY_H = 56;
+    static constexpr int SETTINGS_RANDOM_Y = 74;
+    static constexpr int SETTINGS_RANDOM_H = 72;
+    static constexpr int SETTINGS_SECTION_Y = 162;
+    static constexpr int SETTINGS_OPTION_Y = 184;
+    static constexpr int SETTINGS_OPTION_H = 44;
+    static constexpr int SETTINGS_OPTION_GAP = 8;
+    static constexpr int SETTINGS_NOTE_H = 38;
+    static constexpr int SETTINGS_STEPPER_H = 52;
+    static constexpr int SETTINGS_WIFI_H = 54;
+    static constexpr int SETTINGS_SCROLL_THRESHOLD = 10;
 
     static bool _pointInRect(int x, int y, int left, int top, int width, int height)
     {
@@ -320,33 +296,343 @@ private:
         return map(value, minValue, maxValue, 0, size - 1);
     }
 
-    TouchAction _getSettingsTouchAction(int sx, int sy) const
+    void _resetSettingsTouch()
     {
-        if (_pointInRect(sx, sy, 19, 72, 36, 24))
-            return {TOUCH_RANDOM_COUNT_DEC, -1};
+        _settingsTouchActive = false;
+        _settingsTouchDragging = false;
+        _settingsTouchCanScroll = false;
+    }
 
-        if (_pointInRect(sx, sy, 265, 72, 36, 24))
-            return {TOUCH_RANDOM_COUNT_INC, -1};
+    int _settingsOptionTop(int index) const
+    {
+        return SETTINGS_OPTION_Y + index * (SETTINGS_OPTION_H + SETTINGS_OPTION_GAP);
+    }
 
-        for (int i = 0; i < 8; i++)
+    int _settingsCoinsBottomY() const
+    {
+        if (_settingsData.optionCount <= 0) return SETTINGS_SECTION_Y;
+        return _settingsOptionTop(_settingsData.optionCount - 1) + SETTINGS_OPTION_H;
+    }
+
+    int _settingsHiddenNoteY() const
+    {
+        return _settingsCoinsBottomY() + 8;
+    }
+
+    int _settingsDeviceSectionY() const
+    {
+        int y = _settingsCoinsBottomY() + 18;
+        if (_settingsData.hiddenSelectedCount > 0)
+            y = _settingsHiddenNoteY() + SETTINGS_NOTE_H + 18;
+        return y;
+    }
+
+    int _settingsRefreshCardY() const
+    {
+        return _settingsDeviceSectionY() + 18;
+    }
+
+    int _settingsRotateCardY() const
+    {
+        return _settingsRefreshCardY() + SETTINGS_STEPPER_H + 8;
+    }
+
+    int _settingsWifiCardY() const
+    {
+        return _settingsRotateCardY() + SETTINGS_STEPPER_H + 8;
+    }
+
+    int _settingsContentHeight() const
+    {
+        if (!_hasSettingsData) return SETTINGS_VIEWPORT_H;
+
+        int bottom = _settingsWifiCardY() + SETTINGS_WIFI_H + 12;
+
+        return bottom > SETTINGS_VIEWPORT_H ? bottom : SETTINGS_VIEWPORT_H;
+    }
+
+    int _settingsMaxScroll() const
+    {
+        int maxScroll = _settingsContentHeight() - SETTINGS_VIEWPORT_H;
+        return maxScroll > 0 ? maxScroll : 0;
+    }
+
+    void _clampSettingsScroll()
+    {
+        int maxScroll = _settingsMaxScroll();
+        if (_settingsScrollY < 0) _settingsScrollY = 0;
+        if (_settingsScrollY > maxScroll) _settingsScrollY = maxScroll;
+    }
+
+    void _drawSettingsOptionRow(lv_obj_t *parent, int index) const
+    {
+        const SettingsCoinOption &option = _settingsData.options[index];
+        bool enabled = _settingsData.selected[index];
+        CoinTheme theme = _getCoinTheme(option.id);
+        uint32_t border = enabled ? theme.hex : C_BORDER;
+        uint32_t rowBg = enabled ? _dimBg(theme.hex) : 0x10131A;
+        uint32_t rowBot = enabled ? _dim(theme.hex) : 0x10131A;
+        uint32_t textColor = enabled ? C_TEXT1 : C_TEXT2;
+        int y = _settingsOptionTop(index);
+
+        lv_obj_t *row = _mkCard(parent, SETTINGS_CONTENT_X, y, SETTINGS_CONTENT_W, SETTINGS_OPTION_H, rowBg, rowBot, border, 14);
+
+        lv_obj_t *badge = _mkCard(row, 10, 8, 54, 28, 0x0A1024, border, border, 14);
+        lv_obj_t *badgeLabel = _mkLabel(badge, option.label, enabled ? C_TEXT1 : C_TEXT3, &lv_font_montserrat_12);
+        lv_obj_align(badgeLabel, LV_ALIGN_CENTER, 0, 0);
+
+        lv_obj_t *name = _mkLabel(row, theme.name, textColor, &lv_font_montserrat_16);
+        lv_obj_set_pos(name, 76, 6);
+
+        lv_obj_t *hint = _mkLabel(row, enabled ? "Included in base list" : "Tap to add", C_TEXT3, &lv_font_montserrat_12);
+        lv_obj_set_pos(hint, 76, 24);
+
+        lv_obj_t *state = _mkCard(row, 228, 9, 52, 26, enabled ? 0x0A1024 : 0x111111, border, border, 13);
+        lv_obj_t *stateLabel = _mkLabel(state, enabled ? "ON" : "OFF", enabled ? C_BLUE : C_TEXT3, &lv_font_montserrat_12);
+        lv_obj_align(stateLabel, LV_ALIGN_CENTER, 0, 0);
+    }
+
+    void _drawSettingsStepperCard(lv_obj_t *parent,
+                                  int y,
+                                  const char *title,
+                                  const String &meta,
+                                  const String &valueText) const
+    {
+        lv_obj_t *card = _mkCard(parent, SETTINGS_CONTENT_X, y, SETTINGS_CONTENT_W, SETTINGS_STEPPER_H, 0x14173A, 0x0B0E21, C_BORDER, 14);
+        lv_obj_t *titleLabel = _mkLabel(card, title, C_TEXT1, &lv_font_montserrat_16);
+        lv_obj_set_pos(titleLabel, 12, 8);
+        lv_obj_t *metaLabel = _mkLabel(card, meta.c_str(), C_TEXT3, &lv_font_montserrat_12);
+        lv_obj_set_pos(metaLabel, 12, 27);
+
+        lv_obj_t *minus = _mkCard(card, 176, 9, 42, 34, 0x10131A, 0x10131A, C_BORDER, 12);
+        lv_obj_t *minusLabel = _mkLabel(minus, "-", C_TEXT1, &lv_font_montserrat_16);
+        lv_obj_align(minusLabel, LV_ALIGN_CENTER, 0, -1);
+
+        lv_obj_t *plus = _mkCard(card, 244, 9, 42, 34, 0x10131A, 0x10131A, C_BORDER, 12);
+        lv_obj_t *plusLabel = _mkLabel(plus, "+", C_TEXT1, &lv_font_montserrat_16);
+        lv_obj_align(plusLabel, LV_ALIGN_CENTER, 0, -1);
+
+        lv_obj_t *value = _mkLabel(card, valueText.c_str(), C_TEXT1, &lv_font_montserrat_16);
+        lv_obj_align(value, LV_ALIGN_RIGHT_MID, -82, 0);
+    }
+
+    void _renderSettingsScreen()
+    {
+        if (!_hasSettingsData) return;
+
+        lv_obj_t *scr = lv_scr_act();
+        lv_obj_clean(scr);
+        _styleScreen(scr);
+        _mkBar(scr, 0, 0, 320, 1, C_BLUE);
+
+        lv_obj_t *hero = _mkCard(scr, SETTINGS_HEADER_X, SETTINGS_HEADER_Y, SETTINGS_HEADER_W, SETTINGS_HEADER_H, 0x0A0A0A, 0x050505, C_BORDER, 8);
+        _mkPill(hero, 10, 10, 78, 20, 0x0A1024, C_BORDER, "SETTINGS", C_BLUE, &lv_font_montserrat_12);
+        lv_obj_t *title = _mkLabel(hero, "Coins and device", C_TEXT1, &lv_font_montserrat_16);
+        lv_obj_set_pos(title, 10, 27);
+        lv_obj_t *sub = _mkLabel(hero, "Swipe list, tune timing, reopen WiFi portal", C_TEXT3, &lv_font_montserrat_12);
+        lv_obj_set_pos(sub, 104, 14);
+
+        lv_obj_t *viewport = _mkCard(scr, SETTINGS_VIEWPORT_X, SETTINGS_VIEWPORT_Y, SETTINGS_VIEWPORT_W, SETTINGS_VIEWPORT_H, 0x0B0E21, 0x0B0E21, C_BORDER, 14);
+        lv_obj_set_style_clip_corner(viewport, true, 0);
+
+        lv_obj_t *content = lv_obj_create(viewport);
+        lv_obj_set_size(content, SETTINGS_VIEWPORT_W, _settingsContentHeight());
+        lv_obj_set_pos(content, 0, -_settingsScrollY);
+        lv_obj_set_style_bg_opa(content, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(content, 0, 0);
+        lv_obj_set_style_pad_all(content, 0, 0);
+        lv_obj_clear_flag(content, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t *summary = _mkCard(content, SETTINGS_CONTENT_X, SETTINGS_SUMMARY_Y, SETTINGS_CONTENT_W, SETTINGS_SUMMARY_H, 0x14173A, 0x0B0E21, C_BORDER, 14);
+        String summaryTitle = String(_settingsData.selectedCount) + " base coins";
+        lv_obj_t *summaryLabel = _mkLabel(summary, summaryTitle.c_str(), C_TEXT1, &lv_font_montserrat_16);
+        lv_obj_set_pos(summaryLabel, 12, 10);
+        String summaryBody = String(_settingsData.randomCoinCount) + " random, " + String(_settingsData.selectedCount + _settingsData.randomCoinCount) + " / 8 total";
+        lv_obj_t *summaryValue = _mkLabel(summary, summaryBody.c_str(), C_TEXT2, &lv_font_montserrat_12);
+        lv_obj_set_pos(summaryValue, 12, 31);
+        lv_obj_t *summaryHint = _mkLabel(summary, "320x240 layout uses one-thumb rows and steppers", C_TEXT3, &lv_font_montserrat_12);
+        lv_obj_set_pos(summaryHint, 12, 45);
+
+        lv_obj_t *randomCard = _mkCard(content, SETTINGS_CONTENT_X, SETTINGS_RANDOM_Y, SETTINGS_CONTENT_W, SETTINGS_RANDOM_H, 0x14173A, 0x0B0E21, C_BORDER, 14);
+        lv_obj_t *randomTitle = _mkLabel(randomCard, "Random coins", C_TEXT1, &lv_font_montserrat_16);
+        lv_obj_set_pos(randomTitle, 12, 10);
+        String randomMeta = String(_settingsData.maxRandomCoinCount) + " available with current base count";
+        lv_obj_t *randomMetaLabel = _mkLabel(randomCard, randomMeta.c_str(), C_TEXT3, &lv_font_montserrat_12);
+        lv_obj_set_pos(randomMetaLabel, 12, 31);
+
+        lv_obj_t *minus = _mkCard(randomCard, 12, 22, 48, 40, 0x10131A, 0x10131A, C_BORDER, 14);
+        lv_obj_t *minusLabel = _mkLabel(minus, "-", C_TEXT1, &lv_font_montserrat_16);
+        lv_obj_align(minusLabel, LV_ALIGN_CENTER, 0, -1);
+
+        lv_obj_t *plus = _mkCard(randomCard, 230, 22, 48, 40, 0x10131A, 0x10131A, C_BORDER, 14);
+        lv_obj_t *plusLabel = _mkLabel(plus, "+", C_TEXT1, &lv_font_montserrat_16);
+        lv_obj_align(plusLabel, LV_ALIGN_CENTER, 0, -1);
+
+        String randomValue = String(_settingsData.randomCoinCount);
+        lv_obj_t *randomCount = _mkLabel(randomCard, randomValue.c_str(), C_TEXT1, &lv_font_montserrat_32);
+        lv_obj_align(randomCount, LV_ALIGN_CENTER, 0, 7);
+
+        lv_obj_t *section = _mkLabel(content, "Base coins", C_TEXT2, &lv_font_montserrat_12);
+        lv_obj_set_pos(section, SETTINGS_CONTENT_X, SETTINGS_SECTION_Y);
+
+        for (int i = 0; i < _settingsData.optionCount; i++)
+            _drawSettingsOptionRow(content, i);
+
+        if (_settingsData.hiddenSelectedCount > 0)
         {
-            int col = i % 4;
-            int row = i / 4;
-            int x = 17 + col * 73;
-            int y = 123 + row * 34;
-            if (_pointInRect(sx, sy, x, y, 66, 24))
-                return {TOUCH_TOGGLE_SETTINGS_COIN, i};
+            int noteY = _settingsHiddenNoteY();
+            lv_obj_t *note = _mkCard(content, SETTINGS_CONTENT_X, noteY, SETTINGS_CONTENT_W, SETTINGS_NOTE_H, 0x14173A, 0x0B0E21, C_BORDER, 14);
+            String hidden = String("+") + String(_settingsData.hiddenSelectedCount) + " custom portal IDs stay saved";
+            lv_obj_t *hiddenLabel = _mkLabel(note, hidden.c_str(), C_TEXT2, &lv_font_montserrat_12);
+            lv_obj_set_pos(hiddenLabel, 12, 10);
+            lv_obj_t *hiddenHint = _mkLabel(note, "Use the portal only for advanced CoinGecko IDs", C_TEXT3, &lv_font_montserrat_12);
+            lv_obj_set_pos(hiddenHint, 12, 22);
         }
 
-        if (_pointInRect(sx, sy, 110, 209, 100, 20))
-            return {TOUCH_APPLY_SETTINGS, -1};
+        lv_obj_t *deviceSection = _mkLabel(content, "Device", C_TEXT2, &lv_font_montserrat_12);
+        lv_obj_set_pos(deviceSection, SETTINGS_CONTENT_X, _settingsDeviceSectionY());
 
-        if (_pointInRect(sx, sy, 15, 209, 70, 20))
-            return {TOUCH_PREV, -1};
+        String refreshMeta = "15s to 300s in 15s steps";
+        String refreshValue = String(_settingsData.priceRefreshSeconds) + "s";
+        _drawSettingsStepperCard(content, _settingsRefreshCardY(), "Price refresh", refreshMeta, refreshValue);
 
-        if (_pointInRect(sx, sy, 235, 209, 70, 20))
-            return {TOUCH_NEXT, -1};
+        String rotateMeta = "3s to 60s in 1s steps";
+        String rotateValue = String(_settingsData.rotateSeconds) + "s";
+        _drawSettingsStepperCard(content, _settingsRotateCardY(), "Auto-rotate", rotateMeta, rotateValue);
 
+        lv_obj_t *wifiCard = _mkCard(content, SETTINGS_CONTENT_X, _settingsWifiCardY(), SETTINGS_CONTENT_W, SETTINGS_WIFI_H, 0x14173A, 0x0B0E21, C_BORDER, 14);
+        lv_obj_t *wifiTitle = _mkLabel(wifiCard, "WiFi portal", C_TEXT1, &lv_font_montserrat_16);
+        lv_obj_set_pos(wifiTitle, 12, 8);
+        lv_obj_t *wifiHint = _mkLabel(wifiCard, "Tap to reboot into captive setup", C_TEXT3, &lv_font_montserrat_12);
+        lv_obj_set_pos(wifiHint, 12, 29);
+        lv_obj_t *wifiAction = _mkCard(wifiCard, 194, 10, 86, 32, 0x0A1024, 0x0A1024, C_BLUE, 12);
+        lv_obj_t *wifiActionLabel = _mkLabel(wifiAction, "OPEN", C_BLUE, &lv_font_montserrat_12);
+        lv_obj_align(wifiActionLabel, LV_ALIGN_CENTER, 0, 0);
+
+        lv_obj_t *footer = _mkCard(scr, SETTINGS_FOOTER_X, SETTINGS_FOOTER_Y, SETTINGS_FOOTER_W, SETTINGS_FOOTER_H, 0x0A0A0A, 0x050505, C_BORDER, 12);
+        _mkPill(footer, 8, 3, 88, 28, 0x10131A, C_BORDER, "BACK", C_TEXT3, &lv_font_montserrat_12);
+
+        uint32_t applyBorder = _settingsData.dirty ? C_BLUE : C_BORDER;
+        uint32_t applyBg = _settingsData.dirty ? 0x0A1024 : 0x10131A;
+        lv_obj_t *apply = _mkCard(footer, 178, 3, 120, 28, applyBg, applyBg, applyBorder, 14);
+        lv_obj_t *applyLabel = _mkLabel(apply, _settingsData.dirty ? "APPLY" : "SAVED", _settingsData.dirty ? C_BLUE : C_TEXT3, &lv_font_montserrat_12);
+        lv_obj_align(applyLabel, LV_ALIGN_CENTER, 0, 0);
+
+        int maxScroll = _settingsMaxScroll();
+        if (maxScroll > 0)
+        {
+            lv_obj_t *track = _mkCard(scr, 302, SETTINGS_VIEWPORT_Y + 8, 4, SETTINGS_VIEWPORT_H - 16, 0x1B1B1B, 0x1B1B1B, 0x1B1B1B, 2);
+            int thumbHeight = ((SETTINGS_VIEWPORT_H - 16) * SETTINGS_VIEWPORT_H) / _settingsContentHeight();
+            if (thumbHeight < 18) thumbHeight = 18;
+            int thumbTravel = (SETTINGS_VIEWPORT_H - 16) - thumbHeight;
+            int thumbY = SETTINGS_VIEWPORT_Y + 8;
+            if (thumbTravel > 0)
+                thumbY += (_settingsScrollY * thumbTravel) / maxScroll;
+            _mkCard(scr, 302, thumbY, 4, thumbHeight, C_BLUE, C_BLUE, C_BLUE, 2);
+        }
+
+        _lvFlush();
+    }
+
+    TouchAction _hitTestSettingsAction(int sx, int sy) const
+    {
+        if (_pointInRect(sx, sy, 15, 201, 88, 28))
+            return TouchAction(TOUCH_PREV, -1);
+
+        if (_pointInRect(sx, sy, 185, 201, 120, 28))
+            return TouchAction(TOUCH_APPLY_SETTINGS, -1);
+
+        if (!_pointInRect(sx, sy, SETTINGS_VIEWPORT_X, SETTINGS_VIEWPORT_Y, SETTINGS_VIEWPORT_W, SETTINGS_VIEWPORT_H))
+            return TouchAction();
+
+        int contentX = sx - SETTINGS_VIEWPORT_X;
+        int contentY = sy - SETTINGS_VIEWPORT_Y + _settingsScrollY;
+
+        if (_pointInRect(contentX, contentY, 20, SETTINGS_RANDOM_Y + 22, 48, 40))
+            return TouchAction(TOUCH_RANDOM_COUNT_DEC, -1);
+
+        if (_pointInRect(contentX, contentY, 238, SETTINGS_RANDOM_Y + 22, 48, 40))
+            return TouchAction(TOUCH_RANDOM_COUNT_INC, -1);
+
+        for (int i = 0; i < _settingsData.optionCount; i++)
+        {
+            if (_pointInRect(contentX, contentY, SETTINGS_CONTENT_X, _settingsOptionTop(i), SETTINGS_CONTENT_W, SETTINGS_OPTION_H))
+                return TouchAction(TOUCH_TOGGLE_SETTINGS_COIN, i);
+        }
+
+        if (_pointInRect(contentX, contentY, 184, _settingsRefreshCardY() + 9, 42, 34))
+            return TouchAction(TOUCH_PRICE_REFRESH_DEC, -1);
+
+        if (_pointInRect(contentX, contentY, 252, _settingsRefreshCardY() + 9, 42, 34))
+            return TouchAction(TOUCH_PRICE_REFRESH_INC, -1);
+
+        if (_pointInRect(contentX, contentY, 184, _settingsRotateCardY() + 9, 42, 34))
+            return TouchAction(TOUCH_ROTATE_DEC, -1);
+
+        if (_pointInRect(contentX, contentY, 252, _settingsRotateCardY() + 9, 42, 34))
+            return TouchAction(TOUCH_ROTATE_INC, -1);
+
+        if (_pointInRect(contentX, contentY, SETTINGS_CONTENT_X, _settingsWifiCardY(), SETTINGS_CONTENT_W, SETTINGS_WIFI_H))
+            return TouchAction(TOUCH_OPEN_WIFI_PORTAL, -1);
+
+        return TouchAction();
+    }
+
+    TouchAction _getSettingsTouchAction()
+    {
+        bool nowTouched = ts.touched();
+        if (!nowTouched)
+        {
+            if (!_settingsTouchActive) return TouchAction();
+
+            bool wasDragging = _settingsTouchDragging;
+            int releaseX = _settingsTouchLastX;
+            int releaseY = _settingsTouchLastY;
+            _resetSettingsTouch();
+
+            if (wasDragging) return TouchAction();
+            return _hitTestSettingsAction(releaseX, releaseY);
+        }
+
+        TS_Point p = ts.getPoint();
+        int sx = _mapTouchAxis(p.x, TOUCH_X_MIN, TOUCH_X_MAX, screenWidth);
+        int sy = _mapTouchAxis(p.y, TOUCH_Y_MIN, TOUCH_Y_MAX, screenHeight);
+
+        if (!_settingsTouchActive)
+        {
+            _settingsTouchActive = true;
+            _settingsTouchDragging = false;
+            _settingsTouchCanScroll = _pointInRect(sx, sy, SETTINGS_VIEWPORT_X, SETTINGS_VIEWPORT_Y, SETTINGS_VIEWPORT_W, SETTINGS_VIEWPORT_H);
+            _settingsTouchStartX = sx;
+            _settingsTouchStartY = sy;
+            _settingsTouchLastX = sx;
+            _settingsTouchLastY = sy;
+            return TouchAction();
+        }
+
+        int totalDx = sx - _settingsTouchStartX;
+        int totalDy = sy - _settingsTouchStartY;
+
+        if (_settingsTouchCanScroll
+            && (_settingsTouchDragging || (abs(totalDy) >= SETTINGS_SCROLL_THRESHOLD && abs(totalDy) > abs(totalDx))))
+        {
+            _settingsTouchDragging = true;
+
+            int scrollStep = _settingsTouchLastY - sy;
+            _settingsTouchLastX = sx;
+            _settingsTouchLastY = sy;
+
+            if (scrollStep != 0)
+            {
+                _settingsScrollY += scrollStep;
+                _clampSettingsScroll();
+                _renderSettingsScreen();
+            }
+            return TouchAction();
+        }
+
+        _settingsTouchLastX = sx;
+        _settingsTouchLastY = sy;
         return TouchAction();
     }
 };

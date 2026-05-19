@@ -35,7 +35,7 @@ pio run -e cyd2usb --target upload
 1. The device creates a WiFi access point — connect to it.
 2. Enter your WiFi credentials. The portal still accepts an optional advanced CoinGecko ID CSV override if you want it.
 3. Save and the device will reboot, connect to WiFi, and start displaying prices.
-4. Swipe through the coin tabs to the `SETTINGS` tab to pick the base coins and how many random coins to add.
+4. Swipe left and right to cycle coins. Tap the middle of a coin screen to open the `SETTINGS` panel, where you can adjust coins, timing, and WiFi, then use `BACK` to return to monitoring.
 
 > Double-press the reset button at any time to re-open the configuration portal.
 
@@ -50,14 +50,14 @@ By default the firmware uses:
 - 3 base coins: bitcoin, ethereum, solana
 - 3 extra random coins
 
-The Settings tab lets you choose the base mix from the built-in popular coin list and set how many random coins to add. Random picks are filled from CoinGecko trending and high-volume markets.
+The Settings panel lets you choose the base mix from the built-in popular coin list, set how many random coins to add, change the price refresh interval, change the auto-rotate interval, and reopen the captive WiFi portal. Random picks are filled from CoinGecko trending and high-volume markets.
 
 If you keep the default coin settings unchanged, startup adds:
 
 - 1 random trending coin
 - 2 random coins picked from CoinGecko's top 100 by trading volume
 
-Up to **8 coins** are supported. Prices refresh every 60 seconds and rotate every 8 seconds.
+Up to **8 coins** are supported. Default timing is a 60 second refresh interval and an 8 second auto-rotate interval, both configurable from the Settings panel.
 
 ## Monitor Serial Output
 

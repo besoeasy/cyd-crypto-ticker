@@ -5,16 +5,24 @@
 
 #define CONFIG_CRYPTO_IDS "cryptoIds"
 #define CONFIG_RANDOM_COIN_COUNT "randomCoinCount"
+#define CONFIG_PRICE_REFRESH_SECONDS "priceRefreshSeconds"
+#define CONFIG_ROTATE_SECONDS "rotateSeconds"
+#define CONFIG_OPEN_WIFI_PORTAL "openWifiPortal"
 #define DEFAULT_CORE_CRYPTO_IDS "bitcoin,ethereum,solana"
 #define DEFAULT_CRYPTO_IDS DEFAULT_CORE_CRYPTO_IDS
 #define LEGACY_DEFAULT_CRYPTO_IDS "bitcoin,ethereum"
 #define DEFAULT_RANDOM_COIN_COUNT 3
+#define DEFAULT_PRICE_REFRESH_SECONDS 60
+#define DEFAULT_ROTATE_SECONDS 8
 
 class ProjectConfig
 {
 public:
   String cryptoIds = DEFAULT_CRYPTO_IDS;
   uint8_t randomCoinCount = DEFAULT_RANDOM_COIN_COUNT;
+  uint16_t priceRefreshSeconds = DEFAULT_PRICE_REFRESH_SECONDS;
+  uint16_t rotateSeconds = DEFAULT_ROTATE_SECONDS;
+  bool openWifiPortal = false;
 
   bool usesDefaultCryptoIds() const
   {
@@ -25,7 +33,17 @@ public:
 
   bool usesDefaultCoinSettings() const
   {
-    return usesDefaultCryptoIds() && randomCoinCount == DEFAULT_RANDOM_COIN_COUNT;
+    return usesDefaultCryptoIds()
+        && randomCoinCount == DEFAULT_RANDOM_COIN_COUNT
+        && priceRefreshSeconds == DEFAULT_PRICE_REFRESH_SECONDS
+        && rotateSeconds == DEFAULT_ROTATE_SECONDS;
+  }
+
+  bool consumeOpenWifiPortal()
+  {
+    if (!openWifiPortal) return false;
+    openWifiPortal = false;
+    return true;
   }
 
   bool fetchConfigFile()
@@ -61,6 +79,15 @@ public:
     else
       randomCoinCount = usesDefaultCryptoIds() ? DEFAULT_RANDOM_COIN_COUNT : 0;
 
+    if (json.containsKey(CONFIG_PRICE_REFRESH_SECONDS))
+      priceRefreshSeconds = clampPriceRefreshSeconds(json[CONFIG_PRICE_REFRESH_SECONDS].as<int>());
+
+    if (json.containsKey(CONFIG_ROTATE_SECONDS))
+      rotateSeconds = clampRotateSeconds(json[CONFIG_ROTATE_SECONDS].as<int>());
+
+    if (json.containsKey(CONFIG_OPEN_WIFI_PORTAL))
+      openWifiPortal = json[CONFIG_OPEN_WIFI_PORTAL].as<bool>();
+
     return true;
   }
 
@@ -69,6 +96,9 @@ public:
     StaticJsonDocument<512> json;
     json[CONFIG_CRYPTO_IDS] = cryptoIds;
     json[CONFIG_RANDOM_COIN_COUNT] = randomCoinCount;
+    json[CONFIG_PRICE_REFRESH_SECONDS] = priceRefreshSeconds;
+    json[CONFIG_ROTATE_SECONDS] = rotateSeconds;
+    json[CONFIG_OPEN_WIFI_PORTAL] = openWifiPortal;
 
     File configFile = SPIFFS.open(PROJECT_CONFIG_JSON, "w");
     if (!configFile)
@@ -92,6 +122,20 @@ private:
     if (value < 0) return 0;
     if (value > 8) return 8;
     return (uint8_t)value;
+  }
+
+  static uint16_t clampPriceRefreshSeconds(int value)
+  {
+    if (value < 15) return 15;
+    if (value > 300) return 300;
+    return (uint16_t)value;
+  }
+
+  static uint16_t clampRotateSeconds(int value)
+  {
+    if (value < 3) return 3;
+    if (value > 60) return 60;
+    return (uint16_t)value;
   }
 
   static String normalizeCryptoIdsCsv(const String &value)

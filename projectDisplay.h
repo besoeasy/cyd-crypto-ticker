@@ -50,6 +50,8 @@ struct SettingsViewData
   int maxBaseCoinCount = 0;
   int randomCoinCount = 0;
   int maxRandomCoinCount = 0;
+  int priceRefreshSeconds = 0;
+  int rotateSeconds = 0;
   bool dirty = false;
 };
 
@@ -63,7 +65,12 @@ enum TouchActionType
   TOUCH_APPLY_SETTINGS,
   TOUCH_RANDOM_COUNT_DEC,
   TOUCH_RANDOM_COUNT_INC,
-  TOUCH_TOGGLE_SETTINGS_COIN
+  TOUCH_TOGGLE_SETTINGS_COIN,
+  TOUCH_PRICE_REFRESH_DEC,
+  TOUCH_PRICE_REFRESH_INC,
+  TOUCH_ROTATE_DEC,
+  TOUCH_ROTATE_INC,
+  TOUCH_OPEN_WIFI_PORTAL
 };
 
 struct TouchAction

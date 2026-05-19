@@ -45,13 +45,15 @@ String settingsDraftCoinIds[MAX_COINS];
 int settingsDraftCoinCount = 0;
 bool settingsCoinSelected[SETTINGS_COIN_OPTION_COUNT] = {false};
 uint8_t settingsDraftRandomCoinCount = DEFAULT_RANDOM_COIN_COUNT;
+uint16_t settingsDraftPriceRefreshSeconds = DEFAULT_PRICE_REFRESH_SECONDS;
+uint16_t settingsDraftRotateSeconds = DEFAULT_ROTATE_SECONDS;
 bool settingsDirty = false;
 bool settingsScreenActive = false;
 
 unsigned long lastPriceFetch = 0;
 unsigned long lastAutoRotate = 0;
-const unsigned long PRICE_INTERVAL  = 60000;  // 1 min
-const unsigned long ROTATE_INTERVAL = 8000;   // 8 sec
+unsigned long priceIntervalMs  = DEFAULT_PRICE_REFRESH_SECONDS * 1000UL;
+unsigned long rotateIntervalMs = DEFAULT_ROTATE_SECONDS * 1000UL;
 
 static void resetCoinMarketData(CryptoData &coin)
 {
@@ -374,6 +376,8 @@ static void loadSettingsDraftFromConfig()
     settingsDraftCoinCount = 0;
     appendCoinIdsFromCsv(projectConfig.cryptoIds, settingsDraftCoinIds, settingsDraftCoinCount, MAX_COINS);
     settingsDraftRandomCoinCount = projectConfig.randomCoinCount;
+    settingsDraftPriceRefreshSeconds = projectConfig.priceRefreshSeconds;
+    settingsDraftRotateSeconds = projectConfig.rotateSeconds;
 
     int maxRandom = maxRandomCoinCountForBaseCount(settingsDraftCoinCount);
     if (settingsDraftRandomCoinCount > maxRandom)
@@ -381,6 +385,32 @@ static void loadSettingsDraftFromConfig()
 
     syncSettingsSelectionFlags();
     settingsDirty = false;
+}
+
+static bool adjustSettingsPriceRefreshSeconds(int delta)
+{
+    int next = (int)settingsDraftPriceRefreshSeconds + delta;
+    if (next < 15 || next > 300) return false;
+
+    settingsDraftPriceRefreshSeconds = (uint16_t)next;
+    settingsDirty = true;
+    return true;
+}
+
+static bool adjustSettingsRotateSeconds(int delta)
+{
+    int next = (int)settingsDraftRotateSeconds + delta;
+    if (next < 3 || next > 60) return false;
+
+    settingsDraftRotateSeconds = (uint16_t)next;
+    settingsDirty = true;
+    return true;
+}
+
+static void syncRuntimeIntervals()
+{
+    priceIntervalMs = projectConfig.priceRefreshSeconds * 1000UL;
+    rotateIntervalMs = projectConfig.rotateSeconds * 1000UL;
 }
 
 static void removeSettingsDraftCoinId(const String &id)
@@ -509,6 +539,8 @@ static void renderCurrentScreen()
         data.maxBaseCoinCount = maxBaseCoinCountForRandomCount(settingsDraftRandomCoinCount);
         data.randomCoinCount = settingsDraftRandomCoinCount;
         data.maxRandomCoinCount = maxRandomCoinCountForBaseCount(settingsDraftCoinCount);
+        data.priceRefreshSeconds = settingsDraftPriceRefreshSeconds;
+        data.rotateSeconds = settingsDraftRotateSeconds;
         data.dirty = settingsDirty;
         projectDisplay->drawSettingsScreen(data);
         return;
@@ -530,6 +562,8 @@ static bool applySettingsDraft()
 
     projectConfig.cryptoIds = joinCoinIds(settingsDraftCoinIds, settingsDraftCoinCount);
     projectConfig.randomCoinCount = settingsDraftRandomCoinCount;
+    projectConfig.priceRefreshSeconds = settingsDraftPriceRefreshSeconds;
+    projectConfig.rotateSeconds = settingsDraftRotateSeconds;
 
     if (!projectConfig.saveConfigFile())
     {
@@ -537,9 +571,24 @@ static bool applySettingsDraft()
         return false;
     }
 
+    syncRuntimeIntervals();
     refreshResolvedCoins();
     loadSettingsDraftFromConfig();
     return true;
+}
+
+static void restartIntoWifiPortal()
+{
+    projectConfig.openWifiPortal = true;
+    if (!projectConfig.saveConfigFile())
+    {
+        Serial.println("Failed to save WiFi portal reboot flag");
+        return;
+    }
+
+    projectDisplay->showMessage("Opening WiFi...");
+    delay(600);
+    ESP.restart();
 }
 
 void fetchPrices(bool allowDefaultFallback = true)
@@ -743,6 +792,13 @@ void baseProjectSetup()
     if (!projectConfig.fetchConfigFile())
         forceConfig = true;
 
+    if (projectConfig.consumeOpenWifiPortal())
+    {
+        Serial.println("Settings requested WiFi portal");
+        forceConfig = true;
+        projectConfig.saveConfigFile();
+    }
+
     setupWiFiManager(forceConfig, projectConfig, projectDisplay);
 
     int attempts = 0;
@@ -758,6 +814,7 @@ void baseProjectSetup()
     }
 
     loadSettingsDraftFromConfig();
+    syncRuntimeIntervals();
     refreshResolvedCoins();
 
     projectDisplay->showMessage("Fetching prices...");
@@ -780,18 +837,11 @@ void baseProjectLoop()
     {
         if (settingsScreenActive)
         {
-            if (coinCount > 0)
-            {
-                settingsScreenActive = false;
-                currentCoin = coinCount - 1;
-            }
+            settingsScreenActive = false;
         }
         else if (coinCount > 0)
         {
-            if (currentCoin == 0)
-                settingsScreenActive = true;
-            else
-                currentCoin--;
+            currentCoin = (currentCoin - 1 + coinCount) % coinCount;
         }
         lastAutoRotate = now;
         renderCurrentScreen();
@@ -800,27 +850,19 @@ void baseProjectLoop()
     {
         if (settingsScreenActive)
         {
-            if (coinCount > 0)
-            {
-                settingsScreenActive = false;
-                currentCoin = 0;
-            }
+            settingsScreenActive = false;
         }
         else if (coinCount > 0)
         {
-            if (currentCoin >= coinCount - 1)
-                settingsScreenActive = true;
-            else
-                currentCoin++;
+            currentCoin = (currentCoin + 1) % coinCount;
         }
         lastAutoRotate = now;
         renderCurrentScreen();
     }
-    else if (action.type == TOUCH_REFRESH)
+    else if (action.type == TOUCH_OPEN_SETTINGS)
     {
-        projectDisplay->showMessage("Refreshing...");
-        fetchPrices();
-        lastPriceFetch = now;
+        loadSettingsDraftFromConfig();
+        settingsScreenActive = true;
         lastAutoRotate = now;
         renderCurrentScreen();
     }
@@ -836,6 +878,26 @@ void baseProjectLoop()
     {
         if (toggleSettingsCoinSelection(action.value)) renderCurrentScreen();
     }
+    else if (action.type == TOUCH_PRICE_REFRESH_DEC)
+    {
+        if (adjustSettingsPriceRefreshSeconds(-15)) renderCurrentScreen();
+    }
+    else if (action.type == TOUCH_PRICE_REFRESH_INC)
+    {
+        if (adjustSettingsPriceRefreshSeconds(15)) renderCurrentScreen();
+    }
+    else if (action.type == TOUCH_ROTATE_DEC)
+    {
+        if (adjustSettingsRotateSeconds(-1)) renderCurrentScreen();
+    }
+    else if (action.type == TOUCH_ROTATE_INC)
+    {
+        if (adjustSettingsRotateSeconds(1)) renderCurrentScreen();
+    }
+    else if (action.type == TOUCH_OPEN_WIFI_PORTAL)
+    {
+        restartIntoWifiPortal();
+    }
     else if (action.type == TOUCH_APPLY_SETTINGS && settingsDirty)
     {
         projectDisplay->showMessage("Applying...");
@@ -850,7 +912,7 @@ void baseProjectLoop()
     }
 
     // Auto-rotate every ROTATE_INTERVAL
-    if (!settingsScreenActive && coinCount > 1 && now - lastAutoRotate >= ROTATE_INTERVAL)
+    if (!settingsScreenActive && coinCount > 1 && now - lastAutoRotate >= rotateIntervalMs)
     {
         currentCoin = (currentCoin + 1) % coinCount;
         lastAutoRotate = now;
@@ -858,7 +920,7 @@ void baseProjectLoop()
     }
 
     // Refresh prices every PRICE_INTERVAL
-    if (now - lastPriceFetch >= PRICE_INTERVAL)
+    if (now - lastPriceFetch >= priceIntervalMs)
     {
         fetchPrices();
         lastPriceFetch = now;
