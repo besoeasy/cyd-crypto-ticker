@@ -15,10 +15,9 @@ public:
 
   bool usesDefaultCryptoIds() const
   {
-    String configured = cryptoIds;
-    configured.trim();
-    return configured == String(DEFAULT_CRYPTO_IDS)
-        || configured == String(LEGACY_DEFAULT_CRYPTO_IDS);
+    String configured = normalizeCryptoIdsCsv(cryptoIds);
+    return configured == normalizeCryptoIdsCsv(String(DEFAULT_CRYPTO_IDS))
+        || configured == normalizeCryptoIdsCsv(String(LEGACY_DEFAULT_CRYPTO_IDS));
   }
 
   bool fetchConfigFile()
@@ -71,6 +70,28 @@ public:
     }
     configFile.close();
     return true;
+  }
+
+private:
+  static String normalizeCryptoIdsCsv(const String &value)
+  {
+    String normalized;
+    int start = 0;
+    for (int i = 0; i <= (int)value.length(); i++)
+    {
+      if (i == (int)value.length() || value[i] == ',')
+      {
+        String token = value.substring(start, i);
+        token.trim();
+        if (token.length() > 0)
+        {
+          if (normalized.length() > 0) normalized += ",";
+          normalized += token;
+        }
+        start = i + 1;
+      }
+    }
+    return normalized;
   }
 };
 
