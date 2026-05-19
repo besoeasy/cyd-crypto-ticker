@@ -174,7 +174,11 @@ public:
         bool reopening = _screenMode != SCREEN_SETTINGS;
         _settingsData = data;
         _hasSettingsData = true;
-        if (reopening) _settingsScrollY = 0;
+        if (reopening)
+        {
+            _settingsScrollY = 0;
+            _settingsPage = SETTINGS_HOME;
+        }
 
         _screenMode = SCREEN_SETTINGS;
         _lastCoinIndex = -1;
@@ -247,6 +251,14 @@ private:
     bool _wasTouched    = false;
     int  _lastCoinIndex = -1;   // -1 = no previous coin rendered yet
     ScreenMode _screenMode = SCREEN_MESSAGE;
+    enum SettingsPage
+    {
+        SETTINGS_HOME,
+        SETTINGS_COINS,
+        SETTINGS_DEVICE
+    };
+
+    SettingsPage _settingsPage = SETTINGS_HOME;
     SettingsViewData _settingsData;
     bool _hasSettingsData = false;
     int _settingsScrollY = 0;
@@ -284,6 +296,12 @@ private:
     static constexpr int SETTINGS_STEPPER_H = 52;
     static constexpr int SETTINGS_WIFI_H = 54;
     static constexpr int SETTINGS_SCROLL_THRESHOLD = 10;
+
+    static constexpr int SETTINGS_HOME_SUMMARY_Y = 10;
+    static constexpr int SETTINGS_HOME_SUMMARY_H = 46;
+    static constexpr int SETTINGS_HOME_CARD_Y = 64;
+    static constexpr int SETTINGS_HOME_CARD_W = 140;
+    static constexpr int SETTINGS_HOME_CARD_H = 58;
 
     static bool _pointInRect(int x, int y, int left, int top, int width, int height)
     {
@@ -346,7 +364,18 @@ private:
     {
         if (!_hasSettingsData) return SETTINGS_VIEWPORT_H;
 
-        int bottom = _settingsWifiCardY() + SETTINGS_WIFI_H + 12;
+        if (_settingsPage == SETTINGS_HOME) return SETTINGS_VIEWPORT_H;
+
+        if (_settingsPage == SETTINGS_COINS)
+        {
+            int bottom = _settingsCoinsBottomY() + 12;
+            if (_settingsData.hiddenSelectedCount > 0)
+                bottom = _settingsHiddenNoteY() + SETTINGS_NOTE_H + 12;
+            return bottom > SETTINGS_VIEWPORT_H ? bottom : SETTINGS_VIEWPORT_H;
+        }
+
+        int wifiY = SETTINGS_RANDOM_Y + (SETTINGS_STEPPER_H + 8) * 2;
+        int bottom = wifiY + SETTINGS_WIFI_H + 12;
 
         return bottom > SETTINGS_VIEWPORT_H ? bottom : SETTINGS_VIEWPORT_H;
     }
@@ -416,22 +445,63 @@ private:
         lv_obj_align(value, LV_ALIGN_RIGHT_MID, -82, 0);
     }
 
-    void _renderSettingsScreen()
+    void _drawHomeIconCard(lv_obj_t *parent,
+                           int x,
+                           int y,
+                           int w,
+                           int h,
+                           uint32_t accent,
+                           const char *title,
+                           const char *hint,
+                           bool deviceCard) const
     {
-        if (!_hasSettingsData) return;
+        lv_obj_t *card = _mkCard(parent, x, y, w, h, 0x14173A, 0x0B0E21, C_BORDER, 16);
 
-        lv_obj_t *scr = lv_scr_act();
-        lv_obj_clean(scr);
-        _styleScreen(scr);
-        _mkBar(scr, 0, 0, 320, 1, C_BLUE);
+        lv_obj_t *iconBg = _mkCard(card, 12, 11, 40, 36, _dimBg(accent), _dim(accent), accent, 14);
+        lv_obj_set_style_border_width(iconBg, 0, 0);
 
-        lv_obj_t *hero = _mkCard(scr, SETTINGS_HEADER_X, SETTINGS_HEADER_Y, SETTINGS_HEADER_W, SETTINGS_HEADER_H, 0x0A0A0A, 0x050505, C_BORDER, 8);
-        _mkPill(hero, 10, 10, 78, 20, 0x0A1024, C_BORDER, "SETTINGS", C_BLUE, &lv_font_montserrat_12);
-        lv_obj_t *title = _mkLabel(hero, "Coins and device", C_TEXT1, &lv_font_montserrat_16);
-        lv_obj_set_pos(title, 10, 27);
-        lv_obj_t *sub = _mkLabel(hero, "Swipe list, tune timing, reopen WiFi portal", C_TEXT3, &lv_font_montserrat_12);
-        lv_obj_set_pos(sub, 104, 14);
+        if (deviceCard)
+        {
+            _mkOrb(iconBg, 8, 8, 20, accent, LV_OPA_60);
+            _mkOrb(iconBg, 18, 4, 8, C_BG, LV_OPA_COVER);
+            _mkBar(iconBg, 24, 12, 8, 2, accent);
+            _mkBar(iconBg, 10, 22, 20, 2, accent);
+        }
+        else
+        {
+            _mkOrb(iconBg, 8, 10, 8, 0xF7931A, LV_OPA_COVER);
+            _mkOrb(iconBg, 18, 6, 8, 0x627EEA, LV_OPA_COVER);
+            _mkOrb(iconBg, 24, 18, 8, 0x00C18C, LV_OPA_COVER);
+        }
 
+        lv_obj_t *titleLabel = _mkLabel(card, title, C_TEXT1, &lv_font_montserrat_16);
+        lv_obj_set_pos(titleLabel, 62, 12);
+        lv_obj_t *hintLabel = _mkLabel(card, hint, C_TEXT3, &lv_font_montserrat_12);
+        lv_obj_set_pos(hintLabel, 62, 30);
+    }
+
+    void _renderSettingsHome(lv_obj_t *scr) const
+    {
+        lv_obj_t *viewport = _mkCard(scr, SETTINGS_VIEWPORT_X, SETTINGS_VIEWPORT_Y, SETTINGS_VIEWPORT_W, SETTINGS_VIEWPORT_H, 0x0B0E21, 0x0B0E21, C_BORDER, 14);
+
+        lv_obj_t *summary = _mkCard(viewport, SETTINGS_CONTENT_X, SETTINGS_HOME_SUMMARY_Y, SETTINGS_CONTENT_W, SETTINGS_HOME_SUMMARY_H, 0x14173A, 0x0B0E21, C_BORDER, 14);
+        lv_obj_t *summaryTitle = _mkLabel(summary, "Crypto gadget controls", C_TEXT1, &lv_font_montserrat_16);
+        lv_obj_set_pos(summaryTitle, 12, 9);
+        String summaryMeta = String(_settingsData.selectedCount + _settingsData.randomCoinCount) + " active slots, refresh " + String(_settingsData.priceRefreshSeconds) + "s";
+        lv_obj_t *summaryLabel = _mkLabel(summary, summaryMeta.c_str(), C_TEXT2, &lv_font_montserrat_12);
+        lv_obj_set_pos(summaryLabel, 12, 28);
+
+        _drawHomeIconCard(viewport, 10, SETTINGS_HOME_CARD_Y, SETTINGS_HOME_CARD_W, SETTINGS_HOME_CARD_H, 0xF7931A, "Coins", "Base list and random mix", false);
+        _drawHomeIconCard(viewport, 156, SETTINGS_HOME_CARD_Y, SETTINGS_HOME_CARD_W, SETTINGS_HOME_CARD_H, C_BLUE, "Device", "Timing and WiFi portal", true);
+
+        lv_obj_t *footer = _mkCard(scr, SETTINGS_FOOTER_X, SETTINGS_FOOTER_Y, SETTINGS_FOOTER_W, SETTINGS_FOOTER_H, 0x0A0A0A, 0x050505, C_BORDER, 12);
+        _mkPill(footer, 8, 3, 88, 28, 0x10131A, C_BORDER, "BACK", C_TEXT3, &lv_font_montserrat_12);
+        lv_obj_t *footerHint = _mkLabel(footer, "TAP CARD", C_TEXT3, &lv_font_montserrat_12);
+        lv_obj_align(footerHint, LV_ALIGN_CENTER, 52, 0);
+    }
+
+    void _renderCoinsSettings(lv_obj_t *scr) const
+    {
         lv_obj_t *viewport = _mkCard(scr, SETTINGS_VIEWPORT_X, SETTINGS_VIEWPORT_Y, SETTINGS_VIEWPORT_W, SETTINGS_VIEWPORT_H, 0x0B0E21, 0x0B0E21, C_BORDER, 14);
         lv_obj_set_style_clip_corner(viewport, true, 0);
 
@@ -450,7 +520,7 @@ private:
         String summaryBody = String(_settingsData.randomCoinCount) + " random, " + String(_settingsData.selectedCount + _settingsData.randomCoinCount) + " / 8 total";
         lv_obj_t *summaryValue = _mkLabel(summary, summaryBody.c_str(), C_TEXT2, &lv_font_montserrat_12);
         lv_obj_set_pos(summaryValue, 12, 31);
-        lv_obj_t *summaryHint = _mkLabel(summary, "320x240 layout uses one-thumb rows and steppers", C_TEXT3, &lv_font_montserrat_12);
+        lv_obj_t *summaryHint = _mkLabel(summary, "Tap rows to toggle tracked coins", C_TEXT3, &lv_font_montserrat_12);
         lv_obj_set_pos(summaryHint, 12, 45);
 
         lv_obj_t *randomCard = _mkCard(content, SETTINGS_CONTENT_X, SETTINGS_RANDOM_Y, SETTINGS_CONTENT_W, SETTINGS_RANDOM_H, 0x14173A, 0x0B0E21, C_BORDER, 14);
@@ -489,18 +559,48 @@ private:
             lv_obj_set_pos(hiddenHint, 12, 22);
         }
 
-        lv_obj_t *deviceSection = _mkLabel(content, "Device", C_TEXT2, &lv_font_montserrat_12);
-        lv_obj_set_pos(deviceSection, SETTINGS_CONTENT_X, _settingsDeviceSectionY());
+        lv_obj_t *footer = _mkCard(scr, SETTINGS_FOOTER_X, SETTINGS_FOOTER_Y, SETTINGS_FOOTER_W, SETTINGS_FOOTER_H, 0x0A0A0A, 0x050505, C_BORDER, 12);
+        _mkPill(footer, 8, 3, 88, 28, 0x10131A, C_BORDER, "BACK", C_TEXT3, &lv_font_montserrat_12);
+
+        uint32_t applyBorder = _settingsData.dirty ? C_BLUE : C_BORDER;
+        uint32_t applyBg = _settingsData.dirty ? 0x0A1024 : 0x10131A;
+        lv_obj_t *apply = _mkCard(footer, 178, 3, 120, 28, applyBg, applyBg, applyBorder, 14);
+        lv_obj_t *applyLabel = _mkLabel(apply, _settingsData.dirty ? "APPLY" : "SAVED", _settingsData.dirty ? C_BLUE : C_TEXT3, &lv_font_montserrat_12);
+        lv_obj_align(applyLabel, LV_ALIGN_CENTER, 0, 0);
+    }
+
+    void _renderDeviceSettings(lv_obj_t *scr) const
+    {
+        lv_obj_t *viewport = _mkCard(scr, SETTINGS_VIEWPORT_X, SETTINGS_VIEWPORT_Y, SETTINGS_VIEWPORT_W, SETTINGS_VIEWPORT_H, 0x0B0E21, 0x0B0E21, C_BORDER, 14);
+        lv_obj_set_style_clip_corner(viewport, true, 0);
+
+        lv_obj_t *content = lv_obj_create(viewport);
+        lv_obj_set_size(content, SETTINGS_VIEWPORT_W, _settingsContentHeight());
+        lv_obj_set_pos(content, 0, -_settingsScrollY);
+        lv_obj_set_style_bg_opa(content, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(content, 0, 0);
+        lv_obj_set_style_pad_all(content, 0, 0);
+        lv_obj_clear_flag(content, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t *summary = _mkCard(content, SETTINGS_CONTENT_X, SETTINGS_SUMMARY_Y, SETTINGS_CONTENT_W, SETTINGS_SUMMARY_H, 0x14173A, 0x0B0E21, C_BORDER, 14);
+        lv_obj_t *summaryTitle = _mkLabel(summary, "Device behavior", C_TEXT1, &lv_font_montserrat_16);
+        lv_obj_set_pos(summaryTitle, 12, 10);
+        String summaryBody = String("Refresh ") + String(_settingsData.priceRefreshSeconds) + "s, rotate " + String(_settingsData.rotateSeconds) + "s";
+        lv_obj_t *summaryValue = _mkLabel(summary, summaryBody.c_str(), C_TEXT2, &lv_font_montserrat_12);
+        lv_obj_set_pos(summaryValue, 12, 31);
+        lv_obj_t *summaryHint = _mkLabel(summary, "Keep timing low-friction for glanceable monitoring", C_TEXT3, &lv_font_montserrat_12);
+        lv_obj_set_pos(summaryHint, 12, 45);
 
         String refreshMeta = "15s to 300s in 15s steps";
         String refreshValue = String(_settingsData.priceRefreshSeconds) + "s";
-        _drawSettingsStepperCard(content, _settingsRefreshCardY(), "Price refresh", refreshMeta, refreshValue);
+        _drawSettingsStepperCard(content, SETTINGS_RANDOM_Y, "Price refresh", refreshMeta, refreshValue);
 
         String rotateMeta = "3s to 60s in 1s steps";
         String rotateValue = String(_settingsData.rotateSeconds) + "s";
-        _drawSettingsStepperCard(content, _settingsRotateCardY(), "Auto-rotate", rotateMeta, rotateValue);
+        _drawSettingsStepperCard(content, SETTINGS_RANDOM_Y + SETTINGS_STEPPER_H + 8, "Auto-rotate", rotateMeta, rotateValue);
 
-        lv_obj_t *wifiCard = _mkCard(content, SETTINGS_CONTENT_X, _settingsWifiCardY(), SETTINGS_CONTENT_W, SETTINGS_WIFI_H, 0x14173A, 0x0B0E21, C_BORDER, 14);
+        int wifiY = SETTINGS_RANDOM_Y + (SETTINGS_STEPPER_H + 8) * 2;
+        lv_obj_t *wifiCard = _mkCard(content, SETTINGS_CONTENT_X, wifiY, SETTINGS_CONTENT_W, SETTINGS_WIFI_H, 0x14173A, 0x0B0E21, C_BORDER, 14);
         lv_obj_t *wifiTitle = _mkLabel(wifiCard, "WiFi portal", C_TEXT1, &lv_font_montserrat_16);
         lv_obj_set_pos(wifiTitle, 12, 8);
         lv_obj_t *wifiHint = _mkLabel(wifiCard, "Tap to reboot into captive setup", C_TEXT3, &lv_font_montserrat_12);
@@ -517,8 +617,45 @@ private:
         lv_obj_t *apply = _mkCard(footer, 178, 3, 120, 28, applyBg, applyBg, applyBorder, 14);
         lv_obj_t *applyLabel = _mkLabel(apply, _settingsData.dirty ? "APPLY" : "SAVED", _settingsData.dirty ? C_BLUE : C_TEXT3, &lv_font_montserrat_12);
         lv_obj_align(applyLabel, LV_ALIGN_CENTER, 0, 0);
+    }
 
-        int maxScroll = _settingsMaxScroll();
+    void _renderSettingsScreen()
+    {
+        if (!_hasSettingsData) return;
+
+        lv_obj_t *scr = lv_scr_act();
+        lv_obj_clean(scr);
+        _styleScreen(scr);
+        _mkBar(scr, 0, 0, 320, 1, C_BLUE);
+
+        lv_obj_t *hero = _mkCard(scr, SETTINGS_HEADER_X, SETTINGS_HEADER_Y, SETTINGS_HEADER_W, SETTINGS_HEADER_H, 0x0A0A0A, 0x050505, C_BORDER, 8);
+        _mkPill(hero, 10, 10, 78, 20, 0x0A1024, C_BORDER, "SETTINGS", C_BLUE, &lv_font_montserrat_12);
+        const char *titleText = "Settings home";
+        const char *subText = "Pick a category, then drill into sub settings";
+        if (_settingsPage == SETTINGS_COINS)
+        {
+            titleText = "Coin settings";
+            subText = "Icon menu -> Coins -> mix and random picks";
+        }
+        else if (_settingsPage == SETTINGS_DEVICE)
+        {
+            titleText = "Device settings";
+            subText = "Icon menu -> Device -> timing and WiFi tools";
+        }
+
+        lv_obj_t *title = _mkLabel(hero, titleText, C_TEXT1, &lv_font_montserrat_16);
+        lv_obj_set_pos(title, 10, 27);
+        lv_obj_t *sub = _mkLabel(hero, subText, C_TEXT3, &lv_font_montserrat_12);
+        lv_obj_set_pos(sub, 104, 14);
+
+        if (_settingsPage == SETTINGS_HOME)
+            _renderSettingsHome(scr);
+        else if (_settingsPage == SETTINGS_COINS)
+            _renderCoinsSettings(scr);
+        else
+            _renderDeviceSettings(scr);
+
+        int maxScroll = (_settingsPage == SETTINGS_HOME) ? 0 : _settingsMaxScroll();
         if (maxScroll > 0)
         {
             lv_obj_t *track = _mkCard(scr, 302, SETTINGS_VIEWPORT_Y + 8, 4, SETTINGS_VIEWPORT_H - 16, 0x1B1B1B, 0x1B1B1B, 0x1B1B1B, 2);
@@ -534,10 +671,39 @@ private:
         _lvFlush();
     }
 
-    TouchAction _hitTestSettingsAction(int sx, int sy) const
+    TouchAction _hitTestSettingsAction(int sx, int sy)
     {
+        if (_settingsPage == SETTINGS_HOME)
+        {
+            if (_pointInRect(sx, sy, 15, 201, 88, 28))
+                return TouchAction(TOUCH_PREV, -1);
+
+            if (_pointInRect(sx, sy, 17, 124, SETTINGS_HOME_CARD_W, SETTINGS_HOME_CARD_H))
+            {
+                _settingsPage = SETTINGS_COINS;
+                _settingsScrollY = 0;
+                _renderSettingsScreen();
+                return TouchAction();
+            }
+
+            if (_pointInRect(sx, sy, 163, 124, SETTINGS_HOME_CARD_W, SETTINGS_HOME_CARD_H))
+            {
+                _settingsPage = SETTINGS_DEVICE;
+                _settingsScrollY = 0;
+                _renderSettingsScreen();
+                return TouchAction();
+            }
+
+            return TouchAction();
+        }
+
         if (_pointInRect(sx, sy, 15, 201, 88, 28))
-            return TouchAction(TOUCH_PREV, -1);
+        {
+            _settingsPage = SETTINGS_HOME;
+            _settingsScrollY = 0;
+            _renderSettingsScreen();
+            return TouchAction();
+        }
 
         if (_pointInRect(sx, sy, 185, 201, 120, 28))
             return TouchAction(TOUCH_APPLY_SETTINGS, -1);
@@ -554,25 +720,29 @@ private:
         if (_pointInRect(contentX, contentY, 238, SETTINGS_RANDOM_Y + 22, 48, 40))
             return TouchAction(TOUCH_RANDOM_COUNT_INC, -1);
 
-        for (int i = 0; i < _settingsData.optionCount; i++)
+        if (_settingsPage == SETTINGS_COINS)
         {
-            if (_pointInRect(contentX, contentY, SETTINGS_CONTENT_X, _settingsOptionTop(i), SETTINGS_CONTENT_W, SETTINGS_OPTION_H))
-                return TouchAction(TOUCH_TOGGLE_SETTINGS_COIN, i);
+            for (int i = 0; i < _settingsData.optionCount; i++)
+            {
+                if (_pointInRect(contentX, contentY, SETTINGS_CONTENT_X, _settingsOptionTop(i), SETTINGS_CONTENT_W, SETTINGS_OPTION_H))
+                    return TouchAction(TOUCH_TOGGLE_SETTINGS_COIN, i);
+            }
+            return TouchAction();
         }
 
-        if (_pointInRect(contentX, contentY, 184, _settingsRefreshCardY() + 9, 42, 34))
+        if (_pointInRect(contentX, contentY, 184, SETTINGS_RANDOM_Y + 9, 42, 34))
             return TouchAction(TOUCH_PRICE_REFRESH_DEC, -1);
 
-        if (_pointInRect(contentX, contentY, 252, _settingsRefreshCardY() + 9, 42, 34))
+        if (_pointInRect(contentX, contentY, 252, SETTINGS_RANDOM_Y + 9, 42, 34))
             return TouchAction(TOUCH_PRICE_REFRESH_INC, -1);
 
-        if (_pointInRect(contentX, contentY, 184, _settingsRotateCardY() + 9, 42, 34))
+        if (_pointInRect(contentX, contentY, 184, SETTINGS_RANDOM_Y + SETTINGS_STEPPER_H + 17, 42, 34))
             return TouchAction(TOUCH_ROTATE_DEC, -1);
 
-        if (_pointInRect(contentX, contentY, 252, _settingsRotateCardY() + 9, 42, 34))
+        if (_pointInRect(contentX, contentY, 252, SETTINGS_RANDOM_Y + SETTINGS_STEPPER_H + 17, 42, 34))
             return TouchAction(TOUCH_ROTATE_INC, -1);
 
-        if (_pointInRect(contentX, contentY, SETTINGS_CONTENT_X, _settingsWifiCardY(), SETTINGS_CONTENT_W, SETTINGS_WIFI_H))
+        if (_pointInRect(contentX, contentY, SETTINGS_CONTENT_X, SETTINGS_RANDOM_Y + (SETTINGS_STEPPER_H + 8) * 2, SETTINGS_CONTENT_W, SETTINGS_WIFI_H))
             return TouchAction(TOUCH_OPEN_WIFI_PORTAL, -1);
 
         return TouchAction();
@@ -602,7 +772,8 @@ private:
         {
             _settingsTouchActive = true;
             _settingsTouchDragging = false;
-            _settingsTouchCanScroll = _pointInRect(sx, sy, SETTINGS_VIEWPORT_X, SETTINGS_VIEWPORT_Y, SETTINGS_VIEWPORT_W, SETTINGS_VIEWPORT_H);
+            _settingsTouchCanScroll = _settingsPage != SETTINGS_HOME
+                && _pointInRect(sx, sy, SETTINGS_VIEWPORT_X, SETTINGS_VIEWPORT_Y, SETTINGS_VIEWPORT_W, SETTINGS_VIEWPORT_H);
             _settingsTouchStartX = sx;
             _settingsTouchStartY = sy;
             _settingsTouchLastX = sx;
