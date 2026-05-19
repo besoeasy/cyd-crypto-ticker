@@ -55,11 +55,8 @@ resolve_first_file() {
 
 PIO_BIN="$(resolve_executable "${PIO_BIN:-}" pio "$HOME/.platformio/penv/bin/pio" || true)"
 PLATFORMIO_PYTHON="$(resolve_executable "${PLATFORMIO_PYTHON:-}" python3 "$HOME/.platformio/penv/bin/python" || true)"
-ESPTOOL_BIN="$(resolve_first_file "${ESPTOOL_BIN:-}" \
-  "$HOME/.platformio/packages/tool-esptoolpy/esptool.py" \
-  "$HOME/.platformio/penv/bin/esptool.py")"
-BOOT_APP0_BIN="$(resolve_first_file "${BOOT_APP0_BIN:-}" \
-  "$HOME/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin")"
+ESPTOOL_BIN="${ESPTOOL_BIN:-}"
+BOOT_APP0_BIN="${BOOT_APP0_BIN:-}"
 
 require_file() {
   local path="$1"
@@ -77,6 +74,32 @@ require_dir() {
   fi
 }
 
+ensure_platformio_files() {
+  if [[ -z "$ESPTOOL_BIN" ]]; then
+    ESPTOOL_BIN="$(resolve_first_file "" \
+      "$HOME/.platformio/packages/tool-esptoolpy/esptool.py" \
+      "$HOME/.platformio/penv/bin/esptool.py" || true)"
+  fi
+
+  if [[ -z "$BOOT_APP0_BIN" ]]; then
+    BOOT_APP0_BIN="$(resolve_first_file "" \
+      "$HOME/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin" || true)"
+  fi
+
+  if [[ -z "$ESPTOOL_BIN" ]]; then
+    echo "esptool.py not found after PlatformIO build. Set ESPTOOL_BIN if PlatformIO is installed in a custom location." >&2
+    exit 1
+  fi
+
+  if [[ -z "$BOOT_APP0_BIN" ]]; then
+    echo "boot_app0.bin not found after PlatformIO build. Set BOOT_APP0_BIN if PlatformIO is installed in a custom location." >&2
+    exit 1
+  fi
+
+  require_file "$ESPTOOL_BIN"
+  require_file "$BOOT_APP0_BIN"
+}
+
 if [[ -z "$PIO_BIN" ]]; then
   echo "PlatformIO executable not found. Set PIO_BIN or ensure 'pio' is on PATH." >&2
   exit 1
@@ -89,8 +112,6 @@ fi
 
 require_file "$PIO_BIN"
 require_file "$PLATFORMIO_PYTHON"
-require_file "$ESPTOOL_BIN"
-require_file "$BOOT_APP0_BIN"
 require_dir "$SOURCE_DIR"
 
 if [[ -z "$VERSION" ]]; then
@@ -110,6 +131,8 @@ build_env() {
   local merged_bin="$output_dir/merged-firmware.bin"
 
   "$PIO_BIN" run -e "$env_name"
+
+  ensure_platformio_files
 
   require_dir "$env_dir"
   require_file "$env_dir/bootloader.bin"

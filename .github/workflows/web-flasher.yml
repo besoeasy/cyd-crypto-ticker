@@ -35,7 +35,7 @@ jobs:
         uses: actions/configure-pages@v5
 
       - name: Build web flasher site
-        run: ./scripts/build_web_flasher_site.sh
+        run: bash ./scripts/build_web_flasher_site.sh
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
